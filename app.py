@@ -74,7 +74,7 @@ if st.button("LANCER L'ANALYSE DE COMBAT"):
         with st.spinner("🧠 Reddington analyse les failles..."):
             
             # PROMPTS
-            prompt_red = f"Tu es Raymond Reddington, génie de la stratégie. Analyse ce cas juridique avec brio, précision chirurgicale et cite les lois françaises pertinentes. CAS : {cas_juridique}"
+            prompt_red = f"Tu es Raymond Reddington, génie de la stratégie. Analyse ce cas juridique avec brio, précision chirurgicale et cite les lois françaises pertinentes. Utilise la méthode Reddington. CAS : {cas_juridique}"
             prompt_dev = f"Tu es l'Avocat du Diable. Ton but est de détruire les arguments de l'utilisateur. Trouve toutes les failles et les risques de perdre. CAS : {cas_juridique}"
 
             try:
@@ -106,4 +106,4 @@ if st.button("LANCER L'ANALYSE DE COMBAT"):
                 st.error(f"Une erreur est survenue : {e}")
 
 st.divider()
-st.caption("Usage professionnel uniquement. Reddington LegalOS ne remplace pas un avocat assermenté.")
+st.caption("Propulsé par Groq & Llama 3.3. Reddington LegalOS est un outil d'aide à la décision stratégique.")
