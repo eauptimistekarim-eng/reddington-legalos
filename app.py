@@ -73,13 +73,19 @@ elif "2. Chronologie" in choix_etape:
         if st.button("Enregistrer l'événement"):
             # Simulation d'enregistrement
             st.toast(f"Événement du {date_ev} mémorisé !")
-
+            # ... (garde le début du bloc Chronologie)
     st.divider()
     st.write("### Aperçu temporel du dossier")
-    # Tableau vide pour illustrer le rendu final
-    df_temp = pd.DataFrame(columns=["Date", "Événement", "Source"])
-    st.table(df_temp)
-    st.info("💡 Prochainement : Le module reader.py extraira ces dates directement de vos PDF.")
+    
+    if st.button("🔍 Scanner les faits pour extraire les dates"):
+        # On appelle notre nouveau moteur reader.py
+        resultats_auto = extraire_dates_cles("texte_bidon")
+        df_temp = pd.DataFrame(resultats_auto)
+        st.table(df_temp)
+        st.success("Dates extraites avec succès via reader.py !")
+    else:
+        df_temp = pd.DataFrame(columns=["Date", "Événement", "Source"])
+        st.table(df_temp)
 
 # --- ÉTAPES SUIVANTES (Emplacements vides pour le moment) ---
 else:
