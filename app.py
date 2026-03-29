@@ -18,14 +18,11 @@ st.set_page_config(
     page_icon="⚖️"
 )
 
-# 2. INITIALISATION DU SESSION STATE (Mémoire de l'IA)
-# On s'assure que les variables existent pour éviter les erreurs lors de la navigation
+# 2. INITIALISATION DU SESSION STATE
 if 'branche_active' not in st.session_state:
     st.session_state.branche_active = "Non définie"
 if 'cat_procedure' not in st.session_state:
     st.session_state.cat_procedure = "En attente d'analyse"
-if 'acte_detecte' not in st.session_state:
-    st.session_state.acte_detecte = "N/A"
 if 'objectif_final' not in st.session_state:
     st.session_state.objectif_final = None
 if 'montant_estime' not in st.session_state:
@@ -33,52 +30,25 @@ if 'montant_estime' not in st.session_state:
 if 'analyse_complete' not in st.session_state:
     st.session_state.analyse_complete = ""
 
-# 3. DESIGN SYSTÈME (Dark Mode Professionnel)
+# 3. DESIGN SYSTÈME
 st.markdown("""
     <style>
-    /* Fond global */
     .stApp { background-color: #0f172a; color: white; }
-    
-    /* Sidebar */
-    [data-testid="stSidebar"] { 
-        background-color: #1e293b; 
-        border-right: 1px solid #334155; 
-    }
-    
-    /* Conteneur des étapes */
-    .step-container {
-        background-color: #1e293b;
-        padding: 30px;
-        border-radius: 15px;
-        border: 1px solid #334155;
-    }
-
-    /* Override textes Streamlit */
+    [data-testid="stSidebar"] { background-color: #1e293b; border-right: 1px solid #334155; }
+    .step-container { background-color: #1e293b; padding: 30px; border-radius: 15px; border: 1px solid #334155; }
     h1, h2, h3, h4, p, span, label { color: white !important; }
-
-    /* Boutons stylisés LegalOS */
     .stButton>button {
         background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
-        color: white !important;
-        border: none;
-        font-weight: bold;
-        padding: 0.6rem 1rem;
-        transition: 0.3s;
-        width: 100%;
-    }
-    .stButton>button:hover {
-        opacity: 0.9;
-        transform: translateY(-2px);
+        color: white !important; border: none; font-weight: bold; padding: 0.6rem 1rem; width: 100%;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 4. SIDEBAR - NAVIGATION ET ÉTAT DU DOSSIER
+# 4. SIDEBAR
 st.sidebar.title("🧠 LegalOS v1.0")
-st.sidebar.caption("Protocole de Gestion Reddington")
+st.sidebar.caption("Protocole Reddington")
 st.sidebar.markdown("---")
 
-# Menu de navigation principal
 menu_reddington = {
     "1️⃣ Qualification": afficher_qualification,
     "2️⃣ Objectif": afficher_objectif,
@@ -93,20 +63,22 @@ menu_reddington = {
     "1️⃣1️⃣ Exécution / Recours": afficher_recours
 }
 
-selection = st.sidebar.radio("Étapes du protocole :", list(menu_reddington.keys()))
+selection = st.sidebar.radio("Navigation :", list(menu_reddington.keys()))
 
-# --- RÉSUMÉ DU DOSSIER (Interconnexion visuelle) ---
+# --- RÉSUMÉ DYNAMIQUE (Correction de la ligne 112 ici) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("📋 État du Dossier")
 
-# Couleur dynamique pour la branche
 if st.session_state.branche_active != "Non définie":
     st.sidebar.info(f"📁 **Branche :**\n{st.session_state.branche_active}")
-else:
-    st.sidebar.write("📁 Branche : *En attente*")
 
-# Affichage de l'objectif si défini
 if st.session_state.objectif_final:
     st.sidebar.success(f"🎯 **Objectif :**\n{st.session_state.objectif_final}")
-    if st.session_state.montant_estime > 0:
-        st.sidebar.write(f"💰 **Enjeu :** {st.session_state.montant_estime}
+    # Ligne corrigée :
+    st.sidebar.write(f"💰 **Enjeu :** {st.session_state.montant_estime} €")
+
+st.sidebar.markdown("---")
+
+# 5. ZONE DE TRAVAIL
+st.title(f"📍 {selection}")
+menu_reddington[selection]()
