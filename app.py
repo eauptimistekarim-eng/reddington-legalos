@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from logic.router import qualifier_le_dossier
-from logic.tools.reader import extraire_dates_cles
+from logic.tools.reader import extraire_texte_pdf, extraire_dates_cles
 # 1. CONFIGURATION ET DESIGN
 st.set_page_config(page_title="Fortas OS", layout="wide", page_icon="⚖️")
 
@@ -76,6 +76,23 @@ elif "2. Chronologie" in choix_etape:
             # ... (garde le début du bloc Chronologie)
     st.divider()
     st.write("### Aperçu temporel du dossier")
+    st.divider()
+    st.write("### 📂 Analyse de documents")
+    
+    # Nouveau : Zone pour uploader un PDF
+    fichier_uploade = st.file_uploader("Déposez un document (PDF) pour extraire les dates", type="pdf")
+    
+    if st.button("🔍 Lancer l'analyse automatique"):
+        if fichier_uploade is not None:
+            # 1. On lit le PDF
+            texte_extrait = extraire_texte_pdf(fichier_uploade)
+            # 2. On cherche les dates
+            resultats_auto = extraire_dates_cles(texte_extrait)
+            
+            st.table(pd.DataFrame(resultats_auto))
+            st.success("Analyse du document terminée !")
+        else:
+            st.warning("Veuillez d'abord déposer un fichier PDF.")
     
     if st.button("🔍 Scanner les faits pour extraire les dates"):
         # On appelle notre nouveau moteur reader.py
