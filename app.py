@@ -1,95 +1,77 @@
 import streamlit as st
-from views.etape_1 import afficher_etape_1
+from views.etape_1 import afficher_qualification
+# Nous importerons les autres étapes (2 à 11) ici au fur et à mesure
 
-# 1. CONFIGURATION DE LA PAGE
-st.set_page_config(
-    page_title="Fortas OS",
-    layout="wide",
-    page_icon="⚖️"
-)
+# 1. CONFIGURATION DE L'OS
+st.set_page_config(page_title="LegalOS - Reddington Protocol", layout="wide", page_icon="⚖️")
 
-# 2. DESIGN GLOBAL (Forçage des couleurs pour lisibilité maximale)
+# 2. DESIGN SYSTÈME (Compatible Light/Dark Mode & Anti-Bug Visuel)
 st.markdown("""
     <style>
-    /* Fond de l'application */
-    .main { background-color: #f4f7f9; }
+    /* Global Background */
+    .main { background-color: #f8fafc; }
     
-    /* Cartes blanches avec texte noir forcé */
-    .css-card {
-        background-color: white !important;
+    /* Conteneur d'étape (Card) */
+    .step-container {
+        background-color: white;
+        border: 1px solid #e2e8f0;
         border-radius: 12px;
-        padding: 25px;
-        border: 1px solid #e0e6ed;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-        color: #1a1a1a !important;
+        padding: 2rem;
+        color: #1e293b; /* Bleu nuit très foncé pour lecture parfaite */
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     
-    /* Zones de texte avec scroll interne */
-    .scroll-box {
-        height: 500px;
-        overflow-y: auto;
-        padding: 15px;
-        background-color: #ffffff !important;
-        border: 1px solid #f0f2f6;
-        line-height: 1.6;
-        font-size: 1rem;
-        color: #1a1a1a !important;
-        white-space: pre-wrap;
-    }
-    
-    /* Titres de sections Bleus */
-    .section-title {
-        color: #1E3A8A !important;
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin-bottom: 15px;
+    /* Titre d'étape */
+    .step-title {
+        color: #1e3a8a;
+        font-size: 1.5rem;
+        font-weight: 800;
         text-transform: uppercase;
-        border-bottom: 2px solid #3B82F6;
-        padding-bottom: 5px;
-        display: inline-block;
+        border-bottom: 3px solid #3b82f6;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
     }
-    
-    /* Boutons Fortas avec dégradé */
+
+    /* Bouton d'Action Primaire */
     .stButton>button {
-        background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%);
+        background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
         color: white !important;
-        border: none;
-        font-weight: 600;
         border-radius: 8px;
-        height: 3.5em;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        font-weight: 700;
         width: 100%;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(30,58,138,0.3);
-    }
-    
-    /* Forcer le noir sur tous les textes Markdown dans les colonnes */
-    div[data-testid="stMarkdownContainer"] p {
-        color: #1a1a1a !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. NAVIGATION LATÉRALE (Dictionnaire des étapes)
-st.sidebar.title("⚖️ Fortas OS")
+# 3. NAVIGATION LATÉRALE (Les 11 Étapes Reddington)
+st.sidebar.title("🧠 LegalOS v1.0")
+st.sidebar.markdown("---")
 
-# On définit ici les fonctions à appeler pour chaque menu
-etapes = {
-    "1. Qualification": afficher_etape_1,
-    "2. Chronologie": lambda: st.info("Module Chronologie (Étape 2) : En attente d'intégration."),
-    "3. Validité": lambda: st.info("Module Validité (Étape 3) : En attente d'intégration."),
-    "4. Inventaire": lambda: st.info("Module Inventaire (Étape 4) : Prêt pour le développement."),
-    "5. Calculs": lambda: st.info("Module Calculs (Étape 5) : En attente.")
+menu_reddington = {
+    "1️⃣ Qualification": afficher_qualification,
+    "2️⃣ Objectif": lambda: st.info("Définition de l'objectif..."),
+    "3️⃣ Base légale": lambda: st.info("Recherche de la base légale..."),
+    "4️⃣ Preuves / Dossier": lambda: st.info("Inventaire des pièces..."),
+    "5️⃣ Analyse stratégique": lambda: st.info("Calcul des risques..."),
+    "6️⃣ Phase amiable": lambda: st.info("Mise en demeure & Négociation..."),
+    "7️⃣ Choix de procédure": lambda: st.info("Sélection de la voie judiciaire..."),
+    "8️⃣ Rédaction juridique": lambda: st.info("Génération d'actes..."),
+    "9️⃣ Audience": lambda: st.info("Préparation de la plaidoirie..."),
+    "🔟 Jugement": lambda: st.info("Analyse de la décision..."),
+    "1️⃣1️⃣ Exécution / Recours": lambda: st.info("Voies d'exécution & Appel...")
 }
 
-choix = st.sidebar.radio("Navigation du Protocole :", list(etapes.keys()))
+selection = st.sidebar.radio("Protocole Reddington :", list(menu_reddington.keys()))
 
-# 4. AFFICHAGE DYNAMIQUE
-# On affiche le titre de l'étape sélectionnée
-st.markdown(f"## 📍 {choix}")
+# 4. ZONE D'AFFICHAGE DYNAMIQUE
+with st.container():
+    # On force l'encapsulation dans notre style CSS
+    st.markdown(f'<div class="step-title">{selection}</div>', unsafe_allow_html=True)
+    
+    # On appelle la fonction correspondant à l'étape
+    menu_reddington[selection]()
 
-# On exécute la fonction associée au choix
-etapes[choix]()
+st.sidebar.markdown("---")
+st.sidebar.caption("Propulsé par le moteur de règles universel LegalOS")
