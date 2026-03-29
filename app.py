@@ -1,89 +1,101 @@
 import streamlit as st
-from groq import Groq
+import pandas as pd
+import os
+from logic.router import qualifier_le_dossier
 
-# 1. Configuration de l'interface
-st.set_page_config(page_title="Fortas LegalOS", layout="wide", page_icon="⚖️")
+# 1. CONFIGURATION DE LA PAGE
+st.set_page_config(
+    page_title="Fortas OS - Intelligence Juridique", 
+    layout="wide", 
+    page_icon="⚖️"
+)
 
-# 2. Initialisation Groq
-client = Groq(api_key="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")
-MODEL_NAME = "llama-3.3-70b-versatile"
+# 2. DESIGN PERSONNALISÉ (CSS)
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 8px; 
+        height: 3em; 
+        background-color: #1E3A8A; 
+        color: white;
+        font-weight: bold;
+    }
+    .stTextArea>div>div>textarea { border-radius: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 3. La Méthode Fortas (Configurable)
-DEFAULT_METHODE = {
-    "📌 1. Analyse des Faits": "Analyse les faits de manière brute. Identifie les contradictions et les non-dits.",
-    "⚖️ 2. Qualification Juridique": "Donne la qualification juridique exacte et les articles de loi applicables.",
-    "🔎 3. Inventaire des Preuves": "Liste les preuves nécessaires pour gagner. Qu'est-ce qui manque au dossier ?",
-    "🧠 4. Analyse des Intentions": "Analyse la psychologie de la partie adverse. Quel est leur but caché ?",
-    "🏛️ 5. Stratégie de Procédure": "Quelle est la meilleure juridiction et le timing idéal (référé, fond) ?",
-    "👹 6. L'Avocat du Diable": "Prends la place du camp adverse et détruis nos arguments de manière impitoyable.",
-    "💥 7. Riposte Stratégique": "Propose une stratégie de contre-attaque inattendue pour renverser la situation.",
-    "⚠️ 8. Évaluation des Risques": "Évalue froidement les probabilités d'échec et les conséquences possibles.",
-    "📅 9. Plan d'Action (24h)": "Donne les 3 actions immédiates à réaliser dans les prochaines 24 heures.",
-    "📝 10. Éléments de Rédaction": "Donne les éléments de langage précis pour un courrier ou une assignation.",
-    "🔒 11. Protocole de Suivi": "Comment verrouiller le dossier pour garantir un succès sur le long terme ?"
-}
+# 3. INITIALISATION DES DONNÉES (Le Dossier CSV)
+if not os.path.exists('data/dossier.csv'):
+    # Création de la structure de base si absente
+    df = pd.DataFrame(columns=['id', 'nom', 'etape', 'branche', 'protocole', 'resume'])
+    df.to_csv('data/dossier.csv', index=False)
 
-# --- INTERFACE ---
-st.title("⚖️ Fortas LegalOS")
-st.markdown("##### *Système Expert de Haute Stratégie Juridique*")
-st.divider()
+# 4. BARRE LATÉRALE ( NAVIGATION ET PROTOCOLE )
+st.sidebar.image("https://img.icons8.com/fluency/96/law.png", width=60)
+st.sidebar.title("Fortas OS")
+st.sidebar.caption("Système d'Ingénierie Juridique")
+st.sidebar.write("---")
 
-# --- SIDEBAR DE PERSONNALISATION ---
-st.sidebar.title("⚙️ Configuration Fortas")
-st.sidebar.write("Personnalisez les prompts de chaque étape :")
+etapes = [
+    "1. Qualification", "2. Chronologie", "3. Validité", "4. Inventaire",
+    "5. Calculs", "6. Mise en demeure", "7. Riposte", "8. Saisine",
+    "9. Mise en état", "10. Oralité", "11. Jugement", "12. Exécution"
+]
 
-custom_prompts = {}
-selected_steps = []
+# Navigation entre les 12 étapes
+choix_etape = st.sidebar.radio("Suivi du Protocole :", etapes)
 
-for etape, desc in DEFAULT_METHODE.items():
-    # Case à cocher pour activer/désactiver l'étape
-    activated = st.sidebar.checkbox(f"Activer {etape.split('.')[0]}", value=True)
-    # Zone de texte pour modifier l'instruction en temps réel
-    instruction = st.sidebar.text_area(f"Instruction pour {etape.split('.')[1]}", value=desc, height=70)
+st.sidebar.write("---")
+st.sidebar.info("💡 **Statut :** Connecté au moteur logic/router.py")
+
+# 5. ZONE DE TRAVAIL PRINCIPALE
+st.title(f"📍 {choix_etape}")
+
+# --- ÉTAPE 1 : QUALIFICATION ---
+if "1. Qualification" in choix_etape:
+    st.subheader("Analyse du dossier et orientation")
     
-    if activated:
-        selected_steps.append(etape)
-        custom_prompts[etape] = instruction
-
-# --- ZONE DE TRAVAIL ---
-cas_juridique = st.text_area("Détaillez les éléments du dossier :", height=200, placeholder="Exposez les faits ici...")
-
-if st.button("LANCER L'ANALYSE FORTAS"):
-    if not cas_juridique:
-        st.warning("⚠️ Veuillez entrer les détails du cas avant de lancer Fortas.")
-    elif not selected_steps:
-        st.error("❌ Veuillez sélectionner au moins une étape dans la barre latérale.")
-    else:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        nom_client = st.text_input("Nom du dossier ou du client :", placeholder="Ex: Dossier Dupont / Licenciement")
+        faits = st.text_area(
+            "Exposez les faits de manière brute :", 
+            height=250, 
+            placeholder="Décrivez ici la situation (ex: dates, messages reçus, actions du patron...)"
+        )
         
-        for i, etape in enumerate(selected_steps):
-            status_text.text(f"Exécution de l'étape : {etape}...")
-            
-            # L'IA sait qu'elle est l'expert Fortas
-            full_prompt = f"""
-            Tu es l'expert stratégique Fortas. Ta mission est d'exécuter cette instruction : {custom_prompts[etape]}
-            
-            Dossier à traiter : {cas_juridique}
-            
-            Réponds avec une précision chirurgicale, un ton froid et une vision de haute stratégie.
-            """
-            
-            try:
-                response = client.chat.completions.create(
-                    model=MODEL_NAME,
-                    messages=[{"role": "user", "content": full_prompt}],
-                    temperature=0.2
-                )
-                with st.expander(etape, expanded=True):
-                    st.markdown(response.choices[0].message.content)
+        if st.button("Lancer l'Analyse"):
+            if faits:
+                # APPEL AU CERVEAU DANS LOGIC/ROUTER.PY
+                resultat = qualifier_le_dossier(faits)
                 
-                progress_bar.progress((i + 1) / len(selected_steps))
-            except Exception as e:
-                st.error(f"Erreur sur {etape}: {e}")
-        
-        status_text.success("✅ Analyse Fortas terminée.")
-        st.balloons()
+                st.divider()
+                st.success(f"⚖️ **Branche identifiée :** {resultat['branche']}")
+                st.info(f"🚀 **Protocole activé :** {resultat['protocole']}")
+                st.write(resultat['message'])
+                
+                # Sauvegarde temporaire dans la session
+                st.session_state['branche'] = resultat['branche']
+                st.session_state['protocole'] = resultat['protocole']
+            else:
+                st.warning("⚠️ Veuillez saisir les faits avant de lancer l'analyse.")
 
-st.sidebar.divider()
-st.sidebar.caption("Fortas LegalOS v2.2")
+    with col2:
+        st.write("### 📜 Aide à la saisie")
+        st.caption("""
+        Pour une qualification précise, essayez d'inclure :
+        - Le lien (Employeur, Propriétaire, Voisin)
+        - L'action principale (Licenciement, Loyer impayé, Nuisance)
+        - L'objectif (Récupérer de l'argent, Annuler un contrat)
+        """)
+        
+        if 'branche' in st.session_state:
+            st.metric("Branche actuelle", st.session_state['branche'])
+
+# --- ÉTAPES SUIVANTES (À CODER) ---
+else:
+    st.warning(f"Le module pour '{choix_etape}' est en cours de configuration.")
+    st.info("Cette étape sera connectée aux fichiers dans logic/core/ et logic/tools/.")
