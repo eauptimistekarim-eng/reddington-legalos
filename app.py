@@ -20,112 +20,139 @@ st.markdown("""
         font-weight: bold;
         height: 3em;
     }
+    /* Style pour les messages du chat */
+    .stChatMessage { border-radius: 15px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. INITIALISATION DES DONNÉES ET DOSSIERS
+# 2. INITIALISATION DE LA MÉMOIRE (SESSION STATE)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "branche_active" not in st.session_state:
+    st.session_state.branche_active = "Droit général"
+
 if not os.path.exists('data'):
     os.makedirs('data')
-
-if not os.path.exists('data/dossier.csv'):
-    df = pd.DataFrame(columns=['id', 'nom', 'etape', 'branche', 'protocole', 'resume'])
-    df.to_csv('data/dossier.csv', index=False)
 
 # 3. BARRE LATÉRALE (NAVIGATION)
 st.sidebar.title("⚖️ Fortas OS")
 etapes = ["1. Qualification", "2. Chronologie", "3. Validité", "4. Inventaire", "5. Calculs"]
-choix_etape = st.sidebar.radio("Navigation :", etapes)
+choix_etape = st.sidebar.radio("Navigation du Protocole :", etapes)
 
-# 4. LOGIQUE DES ÉTAPES (ZONE DE TRAVAIL)
+# 4. LOGIQUE DES ÉTAPES
 st.title(f"📍 {choix_etape}")
 
 # --- ÉTAPE 1 : QUALIFICATION & CONVERSATION ---
 if "1. Qualification" in choix_etape:
-    col_gauche, col_droite = st.columns([1, 1], gap="large")
+    col_g, col_d = st.columns([1, 1], gap="large")
 
-    with col_gauche:
+    with col_g:
         st.subheader("🧪 Analyse Poussée")
-        faits = st.text_area("Exposez les faits bruts du dossier :", height=250)
+        faits = st.text_area("Exposez les faits bruts du dossier :", height=300, key="faits_zone")
         if st.button("Lancer le Diagnostic"):
             if faits:
                 with st.spinner("Analyse technique..."):
                     res = qualifier_le_dossier(faits)
-                    # On mémorise la branche pour les étapes suivantes
                     st.session_state['branche_active'] = res['branche']
                     st.success(f"Branche identifiée : {res['branche']}")
                     st.info(res['message'])
-            else: 
-                st.warning("Veuillez saisir des faits avant de lancer l'analyse.")
+            else:
+                st.warning("Veuillez saisir des faits.")
 
-    with col_droite:
+    with col_d:
         st.subheader("💬 Assistant Consultant")
-        # Initialisation de l'historique du chat s'il n'existe pas
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-
-        # Container pour scroller le chat
-        chat_container = st.container(height=400)
+        
+        # Affichage de l'historique du chat
+        chat_container = st.container(height=450)
         with chat_container:
-            for q, r in st.session_state.chat_history:
-                with st.chat_message("user"):
-                    st.write(q)
-                with st.chat_message("assistant"):
-                    st.write(r)
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
-        # Entrée utilisateur
-        prompt = st.chat_input("Posez une question sur le droit...")
-        if prompt:
-            with st.spinner("Réflexion..."):
-                reponse = reponse_chat_juridique(prompt, st.session_state.chat_history)
-                st.session_state.chat_history.append((prompt, reponse))
-                st.rerun()
+        # Zone d'entrée du chat
+        if prompt := st.chat_input("Posez une question juridique..."):
+            # Affichage immédiat du message utilisateur
+            with chat_container:
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+            
+            st.session_state.messages.append({"role": "user", "content": prompt})
+
+            # Génération et affichage de la réponse
+            with chat_container:
+                with st.chat_message("assistant"):
+                    with st.spinner("Réflexion..."):
+                        # On prépare l'historique pour l'IA
+                        hist = [(m["content"], "") for m in st.session_state.messages if m["role"] == "user"]
+                        reponse = reponse_chat_juridique(prompt, hist)
+                        st.markdown(reponse)
+            
+            st.session_state.messages.append({"role": "assistant", "content": reponse})
+            st.rerun()
 
 # --- ÉTAPE 2 : CHRONOLOGIE ---
 elif "2. Chronologie" in choix_etape:
     st.subheader("📅 Chronologie & Lecture PDF")
-    
-    fichier_uploade = st.file_uploader("Déposez le document (PDF)", type="pdf")
+    fichier = st.file_uploader("Déposez le document (PDF)", type="pdf")
     
     if st.button("🔍 Extraire les données"):
-        if fichier_uploade:
-            with st.spinner("L'IA lit le document..."):
-                texte = extraire_texte_pdf(fichier_uploade)
+        if fichier:
+            with st.spinner("Extraction en cours..."):
+                texte = extraire_texte_pdf(fichier)
                 resultats = extraire_dates_cles(texte)
-                
-                # Sauvegarde pour l'étape 3
                 st.session_state['donnees_du_pdf'] = resultats
+                st.session_state['nom_fichier'] = fichier.name
                 
-                # Affichage propre en tableau
                 if isinstance(resultats, list) and len(resultats) > 0:
-                    df_final = pd.DataFrame(resultats)
-                    st.table(df_final)
+                    st.table(pd.DataFrame(resultats))
                 else:
-                    st.info("Aucune date précise n'a été extraite, mais le texte est mémorisé.")
-                
-                st.success("Analyse terminée ! Les données sont prêtes pour l'étape '3. Validité'.")
+                    st.info("Document lu, mais aucune date standard détectée.")
+                st.success("Analyse terminée ! Les données sont prêtes pour l'étape 3.")
         else:
-            st.warning("Veuillez déposer un fichier.")
+            st.warning("Veuillez charger un fichier.")
 
 # --- ÉTAPE 3 : VALIDITÉ ---
 elif "3. Validité" in choix_etape:
-    st.subheader("⚖️ Audit de Validité Juridique")
-    
-    # On vérifie si la mémoire contient des données PDF
+    st.subheader("⚖️ Audit de Validité")
     if 'donnees_du_pdf' in st.session_state:
         donnees = st.session_state['donnees_du_pdf']
-        branche = st.session_state.get('branche_active', "Droit général")
+        branche = st.session_state['branche_active']
+        st.write(f"✅ Analyse basée sur le document : **{st.session_state.get('nom_fichier')}**")
         
-        st.write(f"✅ **Document détecté.** Branche : **{branche}**")
-        
-        if st.button("🧠 Lancer l'analyse personnalisée"):
-            with st.spinner("Analyse juridique en cours..."):
-                # On envoie les données réelles et le contexte de branche à l'IA
+        if st.button("🧠 Lancer l'analyse de conformité"):
+            with st.spinner("L'IA examine les délais..."):
                 rapport = analyser_validite_juridique(str(donnees), contexte=branche)
-                st.markdown(f"### 📋 Rapport d'Audit ({branche})")
+                st.markdown("### 📋 Rapport d'Audit")
                 st.info(rapport)
     else:
-        st.error("❌ Aucune donnée de document trouvée. Scannez un PDF à l'étape '2. Chronologie'.")
+        st.error("⚠️ Aucun document scanné. Allez d'abord à l'étape '2. Chronologie'.")
+
+# --- ÉTAPE 4 : INVENTAIRE ---
+elif "4. Inventaire" in choix_etape:
+    st.subheader("📋 Inventaire des pièces")
+    branche = st.session_state['branche_active']
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### ✅ Pièces Reçues")
+        if 'nom_fichier' in st.session_state:
+            st.success(f"📄 {st.session_state['nom_fichier']}")
+        else:
+            st.write("Aucun document scanné pour le moment.")
+            
+    with col2:
+        st.markdown("#### ❌ Pièces Manquantes")
+        # Checklist dynamique selon la branche
+        if "Travail" in branche:
+            docs = ["Contrat de travail", "Bulletins de salaire", "Lettre de licenciement"]
+        elif "Logement" in branche:
+            docs = ["Bail", "Quittances", "État des lieux"]
+        else:
+            docs = ["Pièce d'identité", "Justificatifs", "Contrats"]
+            
+        for d in docs:
+            st.checkbox(d, value=False)
 
 # --- LE RESTE ---
 else:
-    st.info(f"🚧 Le module **{choix_etape}** est en cours de configuration.")
+    st.info(f"🚧 Le module **{choix_etape}** sera bientôt disponible.")
