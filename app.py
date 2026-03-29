@@ -1,49 +1,53 @@
 import streamlit as st
-from logic.router import qualifier_le_dossier
-from logic.processor import classifier_procedure_universelle
 
-def afficher_qualification():
-    # Initialisation des variables de session
-    if "analyse_complete" not in st.session_state: st.session_state.analyse_complete = ""
-    if "branche_active" not in st.session_state: st.session_state.branche_active = "Non définie"
-    if "cat_procedure" not in st.session_state: st.session_state.cat_procedure = "Non définie"
-    if "acte_detecte" not in st.session_state: st.session_state.acte_detecte = "Non détecté"
+# 1. CONFIGURATION (Doit être la toute première commande Streamlit)
+st.set_page_config(page_title="LegalOS v1.0", layout="wide", page_icon="⚖️")
 
-    st.markdown('<div class="step-container">', unsafe_allow_html=True)
-    
-    # Zone de saisie des faits
-    faits = st.text_area("Exposition des faits (Détaillez la situation) :", height=200, placeholder="Ex: Je suis salarié depuis 2005...")
-    
-    if st.button("🚀 LANCER L'ANALYSE REDDINGTON"):
-        if faits:
-            with st.spinner("Qualification juridique en cours..."):
-                # 1. Appel à l'IA pour le rapport de fond
-                res = qualifier_le_dossier(faits)
-                
-                # 2. Appel au processeur de règles pour les badges (Branche, Cat, Acte)
-                # On récupère bien les 3 valeurs ici pour éviter l'erreur ValueError
-                branche, cat, acte = classifier_procedure_universelle(res['message'], faits)
-                
-                # Mise à jour de la session
-                st.session_state.analyse_complete = res['message']
-                st.session_state.branche_active = branche
-                st.session_state.cat_procedure = cat
-                st.session_state.acte_detecte = acte
-                st.rerun()
+# 2. TENTATIVE D'IMPORTATION SÉCURISÉE
+try:
+    from views.etape_1 import afficher_qualification
+except ImportError as e:
+    st.error(f"Erreur d'importation : {e}. Vérifiez que le dossier 'views' et le fichier 'etape_1.py' existent.")
+    def afficher_qualification(): st.warning("Module de qualification indisponible.")
 
-    # Affichage des résultats
-    if st.session_state.analyse_complete:
-        st.divider()
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.info(f"**Branche :**\n{st.session_state.branche_active}")
-        with col2:
-            st.warning(f"**Procédure :**\n{st.session_state.cat_procedure}")
-        with col3:
-            st.success(f"**Acte suggéré :**\n{st.session_state.acte_detecte}")
+# 3. DESIGN SYSTÈME (Dark Mode Forcé pour visibilité)
+st.markdown("""
+    <style>
+    .stApp { background-color: #0f172a; color: white; }
+    [data-testid="stSidebar"] { background-color: #1e293b; border-right: 1px solid #334155; }
+    .step-container {
+        background-color: #1e293b;
+        padding: 25px;
+        border-radius: 12px;
+        border: 1px solid #334155;
+        color: white !important;
+    }
+    h1, h2, h3, h4, h5, h6, p, span, label { color: white !important; }
+    .stTextArea textarea { background-color: #0f172a; color: white !important; border: 1px solid #334155; }
+    </style>
+    """, unsafe_allow_html=True)
 
-        st.markdown("### 📋 Rapport de Qualification & Stratégie")
-        st.write(st.session_state.analyse_complete)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+# 4. NAVIGATION SIDEBAR
+st.sidebar.title("🧠 LegalOS v1.0")
+st.sidebar.markdown("---")
+
+menu_reddington = {
+    "1️⃣ Qualification": afficher_qualification,
+    "2️⃣ Objectif": lambda: st.info("Étape 2 : Définition de l'objectif stratégique."),
+    "3️⃣ Base légale": lambda: st.info("Étape 3 : Recherche des fondements juridiques."),
+    "4️⃣ Preuves / Dossier": lambda: st.info("Étape 4 : Inventaire des pièces probantes.")
+}
+
+selection = st.sidebar.radio("Protocole Reddington :", list(menu_reddington.keys()))
+
+# 5. ZONE DE TITRE PRINCIPALE
+st.title(f"📍 {selection}")
+
+# 6. EXÉCUTION DE L'ÉTAPE
+try:
+    menu_reddington[selection]()
+except Exception as e:
+    st.error(f"Erreur d'exécution dans {selection} : {e}")
+
+st.sidebar.markdown("---")
+st.sidebar.caption("Moteur Reddington Universel actif")
