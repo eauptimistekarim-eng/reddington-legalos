@@ -52,22 +52,28 @@ if "1. Qualification" in choix_etape:
 elif "2. Chronologie" in choix_etape:
     st.subheader("📅 Chronologie & Lecture PDF")
     
-    fichier_uploade = st.file_uploader("Déposez le document Pôle Emploi / IAE (PDF)", type="pdf")
+    fichier_uploade = st.file_uploader("Déposez le document (PDF)", type="pdf")
     
-    if st.button("🔍 Extraire les données du document"):
+    if st.button("🔍 Extraire les données"):
         if fichier_uploade:
-            with st.spinner("L'IA lit le document..."):
+            with st.spinner("Lecture en cours..."):
                 texte = extraire_texte_pdf(fichier_uploade)
                 resultats = extraire_dates_cles(texte)
                 
-                # CRUCIAL : On stocke dans la mémoire de la session
+                # Sauvegarde pour l'étape 3
                 st.session_state['donnees_du_pdf'] = resultats
                 
-                st.table(pd.DataFrame(resultats))
-                st.success("Données mémorisées ! Passez à l'étape 3.")
+                # Affichage propre en tableau
+                if isinstance(resultats, list) and len(resultats) > 0:
+                    df_final = pd.DataFrame(resultats)
+                    st.table(df_final)
+                else:
+                    st.info("Aucune date précise n'a été extraite, mais le texte est mémorisé.")
+                
+                st.success("Analyse terminée ! Vous pouvez consulter l'onglet '3. Validité'.")
         else:
             st.warning("Veuillez déposer un fichier.")
-
+            
 # --- ÉTAPE 3 : VALIDITÉ ---
 elif "3. Validité" in choix_etape:
     st.subheader("⚖️ Audit de Validité Juridique")
