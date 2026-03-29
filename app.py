@@ -4,7 +4,7 @@ import os
 from logic.router import qualifier_le_dossier
 from logic.tools.reader import extraire_texte_pdf, extraire_dates_cles
 from logic.tools.analyzer import analyser_validite_juridique
-from logic.tools.chatbot import reponse_chat_juridique
+from logic.tools.chatbot import reponse_chat_juridique_stream
 
 # 1. CONFIGURATION ET DESIGN
 st.set_page_config(page_title="Fortas OS", layout="wide", page_icon="⚖️")
@@ -20,17 +20,15 @@ st.markdown("""
         font-weight: bold;
         height: 3em;
     }
-    /* Style pour les messages du chat */
-    .stChatMessage { border-radius: 15px; margin-bottom: 10px; }
+    .stChatMessage { border-radius: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. INITIALISATION DE LA MÉMOIRE (SESSION STATE)
+# 2. INITIALISATION DE LA MÉMOIRE
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "branche_active" not in st.session_state:
     st.session_state.branche_active = "Droit général"
-
 if not os.path.exists('data'):
     os.makedirs('data')
 
@@ -62,33 +60,26 @@ if "1. Qualification" in choix_etape:
     with col_d:
         st.subheader("💬 Assistant Consultant")
         
-        # Affichage de l'historique du chat
-        chat_container = st.container(height=450)
-        with chat_container:
-            for message in st.session_state.messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
+        # Affichage de l'historique existant
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-        # Zone d'entrée du chat
+        # Zone d'entrée du chat avec effet de streaming
         if prompt := st.chat_input("Posez une question juridique..."):
-            # Affichage immédiat du message utilisateur
-            with chat_container:
-                with st.chat_message("user"):
-                    st.markdown(prompt)
-            
+            # Ajouter et afficher le message utilisateur
             st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-            # Génération et affichage de la réponse
-            with chat_container:
-                with st.chat_message("assistant"):
-                    with st.spinner("Réflexion..."):
-                        # On prépare l'historique pour l'IA
-                        hist = [(m["content"], "") for m in st.session_state.messages if m["role"] == "user"]
-                        reponse = reponse_chat_juridique(prompt, hist)
-                        st.markdown(reponse)
+            # Générer et afficher la réponse progressivement
+            with st.chat_message("assistant"):
+                hist = [(m["content"], "") for m in st.session_state.messages if m["role"] == "user"]
+                # Utilisation du générateur pour l'effet mot à mot
+                reponse_complete = st.write_stream(reponse_chat_juridique_stream(prompt, hist))
             
-            st.session_state.messages.append({"role": "assistant", "content": reponse})
-            st.rerun()
+            # Sauvegarder la réponse complète dans l'historique
+            st.session_state.messages.append({"role": "assistant", "content": reponse_complete})
 
 # --- ÉTAPE 2 : CHRONOLOGIE ---
 elif "2. Chronologie" in choix_etape:
@@ -130,7 +121,7 @@ elif "3. Validité" in choix_etape:
 # --- ÉTAPE 4 : INVENTAIRE ---
 elif "4. Inventaire" in choix_etape:
     st.subheader("📋 Inventaire des pièces")
-    branche = st.session_state['branche_active']
+    branche = st.session_state.get('branche_active', "Droit général")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -142,7 +133,6 @@ elif "4. Inventaire" in choix_etape:
             
     with col2:
         st.markdown("#### ❌ Pièces Manquantes")
-        # Checklist dynamique selon la branche
         if "Travail" in branche:
             docs = ["Contrat de travail", "Bulletins de salaire", "Lettre de licenciement"]
         elif "Logement" in branche:
