@@ -6,91 +6,165 @@ from logic.tools.reader import extraire_texte_pdf, extraire_dates_cles
 from logic.tools.analyzer import analyser_validite_juridique
 from logic.tools.chatbot import reponse_chat_juridique_stream
 
-# 1. CONFIGURATION
+# 1. CONFIGURATION ET STYLE DASHBOARD
 st.set_page_config(page_title="Fortas OS", layout="wide", page_icon="⚖️")
 
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 8px; background-color: #1E3A8A; color: white; font-weight: bold; }
-    .stChatMessage { border-radius: 15px; }
-    .diag-result { background-color: #f0f7ff; padding: 20px; border-radius: 10px; border-left: 5px solid #1E3A8A; }
-    .advice-card { background-color: #fff9db; padding: 15px; border-radius: 10px; border: 1px dashed #f08c00; margin-bottom: 15px; }
+    /* Fond de page gris clair pro */
+    .main { background-color: #f4f7f9; }
+    
+    /* Tuiles (Cards) Blanches */
+    .css-card {
+        background-color: white;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #e0e6ed;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+    }
+    
+    /* Boîtes de contenu avec scroll interne fixe */
+    .scroll-box {
+        height: 450px;
+        overflow-y: auto;
+        padding: 15px;
+        border-radius: 8px;
+        background-color: #ffffff;
+        border: 1px solid #f0f2f6;
+        line-height: 1.6;
+    }
+    
+    /* Bouton avec dégradé */
+    .stButton>button {
+        background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%);
+        color: white;
+        border: none;
+        font-weight: 600;
+        border-radius: 8px;
+        height: 3.5em;
+        transition: 0.3s;
+    }
+    .stButton>button:hover { 
+        transform: translateY(-2px); 
+        box-shadow: 0 4px 12px rgba(30,58,138,0.3); 
+    }
+
+    /* Titres de sections */
+    .section-title {
+        color: #1E3A8A;
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. INITIALISATION
+# 2. INITIALISATION DE LA MÉMOIRE (Session State)
 if "messages" not in st.session_state: st.session_state.messages = []
-if "branche_active" not in st.session_state: st.session_state.branche_active = None
 if "analyse_gpt" not in st.session_state: st.session_state.analyse_gpt = ""
 if "conseils_automatiques" not in st.session_state: st.session_state.conseils_automatiques = ""
+if "branche_active" not in st.session_state: st.session_state.branche_active = "Non définie"
 
-# 3. NAVIGATION
+# 3. BARRE LATÉRALE (Navigation)
 st.sidebar.title("⚖️ Fortas OS")
 etapes = ["1. Qualification", "2. Chronologie", "3. Validité", "4. Inventaire", "5. Calculs"]
-choix_etape = st.sidebar.radio("Navigation :", etapes)
+choix_etape = st.sidebar.radio("Protocole de traitement :", etapes)
 
-st.title(f"📍 {choix_etape}")
-
-# --- ÉTAPE 1 : LE DUO STRATÉGIQUE ---
+# 4. ÉTAPE 1 : LE DASHBOARD STRATÉGIQUE
 if "1. Qualification" in choix_etape:
-    col_g, col_d = st.columns([1, 1], gap="large")
+    st.markdown(f"## 📍 {choix_etape}")
+    
+    # --- ZONE DE SAISIE (Pleine Largeur) ---
+    st.markdown('<div class="css-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📝 Exposition des Faits & Prétentions</div>', unsafe_allow_html=True)
+    faits = st.text_area("", height=180, placeholder="Saisissez ici les faits bruts du dossier pour lancer l'intelligence artificielle...", label_visibility="collapsed")
+    
+    if st.button("🚀 ANALYSER LE DOSSIER & GÉNÉRER LA PROCÉDURE"):
+        if faits:
+            with st.spinner("Analyse stratégique en cours..."):
+                # 1. Appel au Router pour l'analyse stratégique
+                res = qualifier_le_dossier(faits)
+                st.session_state.analyse_gpt = res['message']
+                st.session_state.branche_active = res['branche']
+                
+                # 2. Extraction automatique de la fiche procédure
+                with st.spinner("Rédaction de la fiche de procédure..."):
+                    prompt_proc = f"""
+                    Basé sur cette analyse : {res['message']}
+                    Donne-moi une fiche pratique contenant :
+                    1. Les articles de loi et visas applicables.
+                    2. Les délais de prescription ou de procédure.
+                    3. La liste des étapes à suivre.
+                    Réponds de manière structurée.
+                    """
+                    gen = reponse_chat_juridique_stream(prompt_proc, [])
+                    st.session_state.conseils_automatiques = "".join(list(gen))
+                st.rerun()
+        else:
+            st.warning("Veuillez saisir des faits avant de lancer l'analyse.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    with col_g:
-        st.subheader("🧠 GPT Interne : Analyse Stratégique")
-        faits = st.text_area("Saisissez les faits :", height=250, placeholder="Décrivez le dossier ici...", key="input_faits")
-        
-        if st.button("🚀 Lancer l'Analyse Complète"):
-            if faits:
-                with st.spinner("Génération de la stratégie..."):
-                    # 1. L'IA analyse les faits
-                    res = qualifier_le_dossier(faits)
-                    st.session_state.branche_active = res['branche']
-                    st.session_state.analyse_gpt = res['message']
-                    
-                    # 2. AUTOMATISATION : On demande au bot d'extraire les conseils immédiatement
-                    with st.spinner("Extraction des conseils de procédure..."):
-                        # On crée un prompt invisible pour extraire les conseils
-                        prompt_conseils = f"Basé sur cette analyse : {res['message']}, extrais : 1. Les articles de loi clés, 2. Les délais de prescription, 3. Trois conseils pratiques pour l'avocat."
-                        # On récupère la réponse (on simule un stream pour l'expérience utilisateur)
-                        generateur = reponse_chat_juridique_stream(prompt_conseils, [])
-                        st.session_state.conseils_automatiques = "".join(list(generateur))
-            else:
-                st.warning("Veuillez saisir des faits.")
+    # --- ZONE DE RÉSULTATS (Deux Colonnes) ---
+    col_strat, col_proc = st.columns(2, gap="medium")
 
-        if st.session_state.analyse_gpt:
-            st.markdown(f"""<div class="diag-result"><h4>📝 Analyse Stratégique</h4>{st.session_state.analyse_gpt}</div>""", unsafe_allow_html=True)
+    with col_strat:
+        st.markdown('<div class="css-card">', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-title">🧠 Stratégie : {st.session_state.branche_active}</div>', unsafe_allow_html=True)
+        # Scroll-box pour l'analyse GPT
+        st.markdown(f'''
+            <div class="scroll-box">
+                {st.session_state.analyse_gpt if st.session_state.analyse_gpt else "<i>L'analyse stratégique apparaîtra ici après avoir cliqué sur le bouton.</i>"}
+            </div>
+        ''', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with col_d:
-        st.subheader("📚 Le Collaborateur : Fiche Pratique")
-        
-        if st.session_state.conseils_automatiques:
-            st.markdown("### ⚡ Conseils Extraits Automatiquement")
-            st.markdown(f"""<div class="advice-card">{st.session_state.conseils_automatiques}</div>""", unsafe_allow_html=True)
-            
-            st.divider()
-            st.markdown("### 💬 Questions Complémentaires")
-            
-            # Container de chat pour approfondir
-            chat_container = st.container(height=300)
-            with chat_container:
-                for message in st.session_state.messages:
-                    with st.chat_message(message["role"]): st.markdown(message["content"])
+    with col_proc:
+        st.markdown('<div class="css-card">', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">📚 Fiche Procédure & Articles</div>', unsafe_allow_html=True)
+        # Scroll-box pour la fiche de procédure
+        st.markdown(f'''
+            <div class="scroll-box">
+                {st.session_state.conseils_automatiques if st.session_state.conseils_automatiques else "<i>Les articles de loi et conseils pratiques s'afficheront ici.</i>"}
+            </div>
+        ''', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-            if prompt := st.chat_input("Besoin d'un modèle de clause ou d'un autre article ?"):
+    # --- CHAT COLLABORATIF (Optionnel) ---
+    if st.session_state.analyse_gpt:
+        with st.expander("💬 Approfondir avec le Collaborateur Juridique"):
+            chat_box = st.container(height=350)
+            if prompt := st.chat_input("Ex: Peux-tu me rédiger une clause de non-concurrence adaptée ?"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
-                with chat_container:
-                    with st.chat_message("user"): st.markdown(prompt)
+                with chat_box:
+                    for m in st.session_state.messages: 
+                        with st.chat_message(m["role"]): st.markdown(m["content"])
                     with st.chat_message("assistant"):
-                        ctx = f"Analyse : {st.session_state.analyse_gpt}. Conseils déjà donnés : {st.session_state.conseils_automatiques}"
+                        ctx = f"Analyse : {st.session_state.analyse_gpt}. Conseils : {st.session_state.conseils_automatiques}"
                         reponse = st.write_stream(reponse_chat_juridique_stream(f"Contexte: {ctx}\nQuestion: {prompt}", []))
                 st.session_state.messages.append({"role": "assistant", "content": reponse})
-        else:
-            st.info("L'analyse à gauche générera automatiquement ici vos conseils et articles de loi.")
 
 # --- AUTRES ÉTAPES ---
 elif "2. Chronologie" in choix_etape:
-    st.subheader("📅 Chronologie")
-    st.info("Utilisez cette étape pour extraire les dates des pièces PDF.")
+    st.markdown(f"## 📍 {choix_etape}")
+    st.subheader("📅 Lecture et extraction chronologique")
+    fichier = st.file_uploader("Charger le dossier client (PDF)", type="pdf")
+    if fichier and st.button("Extraire les dates"):
+        with st.spinner("Lecture du document..."):
+            texte = extraire_texte_pdf(fichier)
+            resultats = extraire_dates_cles(texte)
+            st.table(pd.DataFrame(resultats))
+
+elif "4. Inventaire" in choix_etape:
+    st.markdown(f"## 📍 {choix_etape}")
+    st.subheader("📋 Liste des pièces indispensables")
+    st.write(f"Branche détectée : **{st.session_state.branche_active}**")
+    st.checkbox("Mandat de représentation")
+    st.checkbox("Contrat de base")
+    st.checkbox("Preuves des faits (Emails, courriers)")
 
 else:
-    st.info(f"Module {choix_etape} prêt à recevoir les données de l'étape 1.")
+    st.markdown(f"## 📍 {choix_etape}")
+    st.info(f"Le module **{choix_etape}** est prêt à recevoir vos données.")
