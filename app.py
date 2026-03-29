@@ -4,24 +4,41 @@ import os
 from logic.router import qualifier_le_dossier
 from logic.tools.reader import extraire_texte_pdf, extraire_dates_cles
 from logic.tools.analyzer import analyser_validite_juridique
+from logic.tools.chatbot import reponse_chat_juridique
 
-# 1. CONFIGURATION ET DESIGN
-st.set_page_config(page_title="Fortas OS", layout="wide", page_icon="⚖️")
+# --- ÉTAPE 1 : QUALIFICATION & CONVERSATION ---
+if "1. Qualification" in choix_etape:
+    col_gauche, col_droite = st.columns([1, 1], gap="large")
 
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; }
-    .stButton>button { 
-        width: 100%; 
-        border-radius: 8px; 
-        background-color: #1E3A8A; 
-        color: white; 
-        font-weight: bold;
-        height: 3em;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    with col_gauche:
+        st.subheader("🧪 Analyse Poussée")
+        faits = st.text_area("Exposez les faits bruts du dossier :", height=250)
+        if st.button("Lancer le Diagnostic"):
+            if faits:
+                with st.spinner("Analyse technique..."):
+                    res = qualifier_le_dossier(faits)
+                    st.session_state['branche_active'] = res['branche']
+                    st.success(f"Branche : {res['branche']}")
+                    st.info(res['message'])
+            else: st.warning("Veuillez saisir des faits.")
 
+    with col_droite:
+        st.subheader("💬 Assistant Consultant")
+        # Initialisation de l'historique du chat
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+
+        # Zone d'affichage du chat
+        for q, r in st.session_state.chat_history:
+            with st.chat_message("user"): st.write(q)
+            with st.chat_message("assistant"): st.write(r)
+
+        # Entrée utilisateur
+        prompt = st.chat_input("Posez une question sur le droit...")
+        if prompt:
+            reponse = reponse_chat_juridique(prompt, st.session_state.chat_history)
+            st.session_state.chat_history.append((prompt, reponse))
+            st.rerun() # Pour rafraîchir l'affichage du chat
 # 2. INITIALISATION DES DONNÉES
 if not os.path.exists('data/dossier.csv'):
     if not os.path.exists('data'): os.makedirs('data')
@@ -73,7 +90,7 @@ elif "2. Chronologie" in choix_etape:
                 st.success("Analyse terminée ! Vous pouvez consulter l'onglet '3. Validité'.")
         else:
             st.warning("Veuillez déposer un fichier.")
-            
+
 # --- ÉTAPE 3 : VALIDITÉ ---
 elif "3. Validité" in choix_etape:
     st.subheader("⚖️ Audit de Validité Juridique")
