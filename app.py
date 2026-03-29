@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from logic.router import qualifier_le_dossier
 from logic.tools.reader import extraire_texte_pdf, extraire_dates_cles
+from logic.tools.analyzer import analyser_validite_juridique
 # 1. CONFIGURATION ET DESIGN
 st.set_page_config(page_title="Fortas OS", layout="wide", page_icon="⚖️")
 
@@ -93,9 +94,18 @@ elif "2. Chronologie" in choix_etape:
             st.success("Analyse du document terminée !")
         else:
             st.warning("Veuillez d'abord déposer un fichier PDF.")
-            
+# --- LOGIQUE DES ÉTAPES SUIVANTES ---
+    elif "3. Validité" in choix_etape:
+        st.subheader("⚖️ Audit de Validité Juridique")
+        st.write("L'IA analyse la conformité des délais et des procédures.")
+        
+        if st.button("🧠 Lancer l'analyse de conformité"):
+            with st.spinner("Analyse juridique en cours..."):
+                # Simulation : on passe un message de test 
+                # (plus tard on passera les vraies dates sauvegardées)
+                resultat = analyser_validite_juridique("Analyse des dates extraites du PDF")
+                st.markdown("### 📋 Rapport d'Audit")
+                st.info(resultat)
 
-# --- ÉTAPES SUIVANTES (Emplacements vides pour le moment) ---
-else:
-    st.info(f"🚧 Le module **{choix_etape}** est en cours de configuration.")
-    st.write("Nous connecterons bientôt ce module aux fichiers de `logic/core/`.")
+    else:
+        st.info(f"🚧 Le module **{choix_etape}** est en cours de configuration.")
