@@ -11,6 +11,7 @@ st.set_page_config(page_title="Fortas OS", layout="wide", page_icon="⚖️")
 
 st.markdown("""
     <style>
+    /* Fond de page et boutons */
     .main { background-color: #f8f9fa; }
     .stButton>button { 
         width: 100%; 
@@ -20,7 +21,15 @@ st.markdown("""
         font-weight: bold;
         height: 3em;
     }
-    .stChatMessage { border-radius: 15px; }
+    /* Fixer la hauteur des zones pour éviter le défilement de page */
+    .fixed-container {
+        height: 450px;
+        overflow-y: auto;
+        padding: 15px;
+        border: 1px solid #e6e9ef;
+        border-radius: 10px;
+        background-color: white;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -29,13 +38,11 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "branche_active" not in st.session_state:
     st.session_state.branche_active = "Droit général"
-if not os.path.exists('data'):
-    os.makedirs('data')
 
-# 3. BARRE LATÉRALE (NAVIGATION)
+# 3. BARRE LATÉRALE
 st.sidebar.title("⚖️ Fortas OS")
 etapes = ["1. Qualification", "2. Chronologie", "3. Validité", "4. Inventaire", "5. Calculs"]
-choix_etape = st.sidebar.radio("Navigation du Protocole :", etapes)
+choix_etape = st.sidebar.radio("Navigation :", etapes)
 
 # 4. LOGIQUE DES ÉTAPES
 st.title(f"📍 {choix_etape}")
@@ -46,13 +53,15 @@ if "1. Qualification" in choix_etape:
 
     with col_g:
         st.subheader("🧪 Analyse Poussée")
+        # On utilise un container à hauteur fixe pour les faits
         faits = st.text_area("Exposez les faits bruts du dossier :", height=300, key="faits_zone")
+        
         if st.button("Lancer le Diagnostic"):
             if faits:
                 with st.spinner("Analyse technique..."):
                     res = qualifier_le_dossier(faits)
                     st.session_state['branche_active'] = res['branche']
-                    st.success(f"Branche identifiée : {res['branche']}")
+                    st.success(f"Branche : {res['branche']}")
                     st.info(res['message'])
             else:
                 st.warning("Veuillez saisir des faits.")
@@ -60,25 +69,25 @@ if "1. Qualification" in choix_etape:
     with col_d:
         st.subheader("💬 Assistant Consultant")
         
-        # Affichage de l'historique existant
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        # ZONE DE CHAT FIXE (SCROLLABLE)
+        # On utilise le paramètre height natif de st.container pour forcer le scroll
+        chat_container = st.container(height=450)
+        
+        with chat_container:
+            for message in st.session_state.messages:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
-        # Zone d'entrée du chat avec effet de streaming
+        # Saisie utilisateur (toujours collée en bas du container)
         if prompt := st.chat_input("Posez une question juridique..."):
-            # Ajouter et afficher le message utilisateur
             st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # Générer et afficher la réponse progressivement
-            with st.chat_message("assistant"):
-                hist = [(m["content"], "") for m in st.session_state.messages if m["role"] == "user"]
-                # Utilisation du générateur pour l'effet mot à mot
-                reponse_complete = st.write_stream(reponse_chat_juridique_stream(prompt, hist))
+            with chat_container:
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+                with st.chat_message("assistant"):
+                    hist = [(m["content"], "") for m in st.session_state.messages if m["role"] == "user"]
+                    reponse_complete = st.write_stream(reponse_chat_juridique_stream(prompt, hist))
             
-            # Sauvegarder la réponse complète dans l'historique
             st.session_state.messages.append({"role": "assistant", "content": reponse_complete})
 
 # --- ÉTAPE 2 : CHRONOLOGIE ---
@@ -88,35 +97,21 @@ elif "2. Chronologie" in choix_etape:
     
     if st.button("🔍 Extraire les données"):
         if fichier:
-            with st.spinner("Extraction en cours..."):
+            with st.spinner("Extraction..."):
                 texte = extraire_texte_pdf(fichier)
                 resultats = extraire_dates_cles(texte)
                 st.session_state['donnees_du_pdf'] = resultats
                 st.session_state['nom_fichier'] = fichier.name
                 
-                if isinstance(resultats, list) and len(resultats) > 0:
-                    st.table(pd.DataFrame(resultats))
-                else:
-                    st.info("Document lu, mais aucune date standard détectée.")
-                st.success("Analyse terminée ! Les données sont prêtes pour l'étape 3.")
+                # Container fixe pour le tableau s'il est trop long
+                with st.container(height=300):
+                    if isinstance(resultats, list) and len(resultats) > 0:
+                        st.table(pd.DataFrame(resultats))
+                    else:
+                        st.info("Aucune date détectée.")
+                st.success("Données prêtes.")
         else:
             st.warning("Veuillez charger un fichier.")
-
-# --- ÉTAPE 3 : VALIDITÉ ---
-elif "3. Validité" in choix_etape:
-    st.subheader("⚖️ Audit de Validité")
-    if 'donnees_du_pdf' in st.session_state:
-        donnees = st.session_state['donnees_du_pdf']
-        branche = st.session_state['branche_active']
-        st.write(f"✅ Analyse basée sur le document : **{st.session_state.get('nom_fichier')}**")
-        
-        if st.button("🧠 Lancer l'analyse de conformité"):
-            with st.spinner("L'IA examine les délais..."):
-                rapport = analyser_validite_juridique(str(donnees), contexte=branche)
-                st.markdown("### 📋 Rapport d'Audit")
-                st.info(rapport)
-    else:
-        st.error("⚠️ Aucun document scanné. Allez d'abord à l'étape '2. Chronologie'.")
 
 # --- ÉTAPE 4 : INVENTAIRE ---
 elif "4. Inventaire" in choix_etape:
@@ -128,21 +123,20 @@ elif "4. Inventaire" in choix_etape:
         st.markdown("#### ✅ Pièces Reçues")
         if 'nom_fichier' in st.session_state:
             st.success(f"📄 {st.session_state['nom_fichier']}")
-        else:
-            st.write("Aucun document scanné pour le moment.")
             
     with col2:
         st.markdown("#### ❌ Pièces Manquantes")
-        if "Travail" in branche:
-            docs = ["Contrat de travail", "Bulletins de salaire", "Lettre de licenciement"]
-        elif "Logement" in branche:
-            docs = ["Bail", "Quittances", "État des lieux"]
-        else:
-            docs = ["Pièce d'identité", "Justificatifs", "Contrats"]
-            
-        for d in docs:
-            st.checkbox(d, value=False)
+        with st.container(height=300): # Hauteur fixe pour la checklist
+            if "Travail" in branche:
+                docs = ["Contrat de travail", "Bulletins de salaire", "Lettre de licenciement", "Attestation employeur"]
+            elif "Logement" in branche:
+                docs = ["Bail", "Quittances", "État des lieux", "Dépôt de garantie"]
+            else:
+                docs = ["ID", "Justificatif", "Contrat"]
+                
+            for d in docs:
+                st.checkbox(d, value=False)
 
-# --- LE RESTE ---
+# --- LES AUTRES ÉTAPES ---
 else:
-    st.info(f"🚧 Le module **{choix_etape}** sera bientôt disponible.")
+    st.info(f"🚧 Le module **{choix_etape}** est en attente de données ou de configuration.")
