@@ -93,16 +93,7 @@ elif "2. Chronologie" in choix_etape:
             st.success("Analyse du document terminée !")
         else:
             st.warning("Veuillez d'abord déposer un fichier PDF.")
-    
-    if st.button("🔍 Scanner les faits pour extraire les dates"):
-        # On appelle notre nouveau moteur reader.py
-        resultats_auto = extraire_dates_cles("texte_bidon")
-        df_temp = pd.DataFrame(resultats_auto)
-        st.table(df_temp)
-        st.success("Dates extraites avec succès via reader.py !")
-    else:
-        df_temp = pd.DataFrame(columns=["Date", "Événement", "Source"])
-        st.table(df_temp)
+            
 
 # --- ÉTAPES SUIVANTES (Emplacements vides pour le moment) ---
 else:
