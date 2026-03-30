@@ -19,7 +19,6 @@ st.markdown("""
 
 # --- INITIALISATION DU CLIENT GROQ ---
 try:
-    # Utilise st.secrets pour le déploiement Streamlit Cloud
     api_key = st.secrets["GROQ_API_KEY"]
     client = Groq(api_key=api_key)
 except Exception:
@@ -48,7 +47,6 @@ def export_as_pdf():
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(200, 10, "RAPPORT LEGALOS - SYSTEME FREEMAN", ln=True, align='C')
         pdf.ln(10)
-        
         for i in range(11):
             if st.session_state.data[i]:
                 pdf.set_font("Arial", 'B', 12)
@@ -98,11 +96,7 @@ else:
     col_left, col_right = st.columns([1.8, 1.2])
     
     with col_left:
-        input_text = st.text_area(
-            "Saisissez vos éléments...", 
-            value=st.session_state.data[st.session_state.step], 
-            height=300
-        )
+        input_text = st.text_area("Saisissez vos éléments...", value=st.session_state.data[st.session_state.step], height=300)
         st.session_state.data[st.session_state.step] = input_text
         
         c_btn1, c_btn2 = st.columns(2)
@@ -110,13 +104,18 @@ else:
             if st.button("🚀 LANCER L'ANALYSE KAREEM"):
                 if client and len(input_text) > 10:
                     with st.spinner("Kareem analyse votre dossier..."):
-                        p = f"Analyse l'étape {STEPS[st.session_state.step]} pour : {input_text}"
-                        resp = client.chat.completions.create(
-                            messages=[{"role": "user", "content": p}],
-                            model="llama3-8b-8192",
-                        )
-                        st.session_state.ai_reports[st.session_state.step] = resp.choices[0].message.content
-                        st.rerun()
+                        try:
+                            # Utilisation du modèle le plus récent et stable
+                            p = f"Tu es Kareem, expert juridique méthode Freeman. Analyse l'étape {STEPS[st.session_state.step]} pour : {input_text}"
+                            resp = client.chat.completions.create(
+                                messages=[{"role": "user", "content": p}],
+                                model="llama-3.3-70b-versatile",
+                            )
+                            st.session_state.ai_reports[st.session_state.step] = resp.choices[0].message.content
+                            st.rerun()
+                        except Exception as e:
+                            st.error("L'IA est saturée. Réessayez dans quelques secondes.")
+                            st.info(f"Détail technique : {e}")
                 else:
                     st.warning("Texte trop court.")
         
@@ -131,11 +130,10 @@ else:
         if st.session_state.ai_reports[st.session_state.step]:
             st.markdown(f'<div class="kareem-box">{st.session_state.ai_reports[st.session_state.step]}</div>', unsafe_allow_html=True)
             
-            # Export PDF
             pdf_data = export_as_pdf()
             if pdf_data:
-                st.download_button("📥 Télécharger le PDF", pdf_data, "dossier.pdf", "application/pdf")
+                st.download_button("📥 Télécharger le Dossier PDF", pdf_data, "dossier_legalos.pdf", "application/pdf")
         else:
             st.info("En attente d'analyse.")
 
-st.caption("LegalOS v2.0 - Reddington Protocol")
+st.caption("LegalOS v2.1 - Reddington Protocol")
