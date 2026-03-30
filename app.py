@@ -23,8 +23,7 @@ try:
     api_key = st.secrets["GROQ_API_KEY"]
     client = Groq(api_key=api_key)
 except Exception:
-    # Message d'erreur si la clé est absente (utile pour VS Code)
-    st.warning("⚠️ Clé API Groq non configurée. Ajoutez-la dans les Secrets de Streamlit.")
+    st.warning("⚠️ Configuration : Clé API Groq manquante dans les Secrets Streamlit.")
     client = None
 
 # --- GESTION DE LA SESSION ---
@@ -43,28 +42,26 @@ VALID_CODES = ["FREEMAN2026", "VIP_LEGAL"]
 
 # --- FONCTION GÉNÉRATION PDF ---
 def export_as_pdf():
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, "RAPPORT LEGALOS - SYSTEME FREEMAN", ln=True, align='C')
-    pdf.ln(10)
-    
-    for i in range(11):
-        if st.session_state.data[i]:
-            pdf.set_font("Arial", 'B', 12)
-            pdf.set_fill_color(230, 230, 230)
-            pdf.cell(0, 10, f"ETAPE {i+1}: {STEPS[i]}", ln=True, fill=True)
-            pdf.ln(2)
-            pdf.set_font("Arial", '', 10)
-            pdf.multi_cell(0, 5, f"NOTES UTILISATEUR :\n{st.session_state.data[i]}")
-            pdf.ln(2)
-            if st.session_state.ai_reports[i]:
-                pdf.set_font("Arial", 'I', 10)
-                pdf.set_text_color(16, 185, 129)
-                pdf.multi_cell(0, 5, f"ANALYSE KAREEM IA :\n{st.session_state.ai_reports[i]}")
-                pdf.set_text_color(0, 0, 0)
-            pdf.ln(5)
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, "RAPPORT LEGALOS - SYSTEME FREEMAN", ln=True, align='C')
+        pdf.ln(10)
+        
+        for i in range(11):
+            if st.session_state.data[i]:
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, f"ETAPE {i+1}: {STEPS[i]}", ln=True)
+                pdf.set_font("Arial", '', 10)
+                pdf.multi_cell(0, 5, f"NOTES : {st.session_state.data[i]}")
+                if st.session_state.ai_reports[i]:
+                    pdf.set_font("Arial", 'I', 10)
+                    pdf.multi_cell(0, 5, f"ANALYSE KAREEM : {st.session_state.ai_reports[i]}")
+                pdf.ln(5)
+        return pdf.output(dest='S').encode('latin-1', 'replace')
+    except:
+        return None
 
 # --- ÉCRAN DE CONNEXION ---
 if not st.session_state.auth:
@@ -79,13 +76,11 @@ if not st.session_state.auth:
                 st.session_state.auth = True
                 st.rerun()
             else:
-                st.error("Code incorrect. Accès refusé.")
+                st.error("Code incorrect.")
 
 # --- DASHBOARD PRINCIPAL ---
 else:
-    # Sidebar
     with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/1048/1048953.png", width=100)
         st.title("KAREEM IA")
         st.write("---")
         for i, s in enumerate(STEPS):
@@ -93,29 +88,54 @@ else:
             if st.button(label, key=f"side_{i}"):
                 st.session_state.step = i
                 st.rerun()
-        
         st.write("---")
         if st.button("🚪 Déconnexion"):
             st.session_state.auth = False
             st.rerun()
 
-    # Zone de Travail
     st.markdown(f"<h2 class='step-header'>Étape {st.session_state.step + 1} : {STEPS[st.session_state.step]}</h2>", unsafe_allow_html=True)
     
     col_left, col_right = st.columns([1.8, 1.2])
     
     with col_left:
-        # Zone de saisie
         input_text = st.text_area(
-            "Détaillez les éléments de cette étape pour analyse...", 
+            "Saisissez vos éléments...", 
             value=st.session_state.data[st.session_state.step], 
-            height=350,
-            help="Plus vous donnez de détails, plus l'analyse de Kareem sera précise."
+            height=300
         )
         st.session_state.data[st.session_state.step] = input_text
         
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
             if st.button("🚀 LANCER L'ANALYSE KAREEM"):
-                if client and len(input_text) > 15:
-                    with st.spinner("Kareem analyse les éléments
+                if client and len(input_text) > 10:
+                    with st.spinner("Kareem analyse votre dossier..."):
+                        p = f"Analyse l'étape {STEPS[st.session_state.step]} pour : {input_text}"
+                        resp = client.chat.completions.create(
+                            messages=[{"role": "user", "content": p}],
+                            model="llama3-8b-8192",
+                        )
+                        st.session_state.ai_reports[st.session_state.step] = resp.choices[0].message.content
+                        st.rerun()
+                else:
+                    st.warning("Texte trop court.")
+        
+        with c_btn2:
+            if st.button("ÉTAPE SUIVANTE ➔"):
+                if st.session_state.step < 10:
+                    st.session_state.step += 1
+                    st.rerun()
+
+    with col_right:
+        st.markdown("### 🤖 RÉPONSE DE KAREEM")
+        if st.session_state.ai_reports[st.session_state.step]:
+            st.markdown(f'<div class="kareem-box">{st.session_state.ai_reports[st.session_state.step]}</div>', unsafe_allow_html=True)
+            
+            # Export PDF
+            pdf_data = export_as_pdf()
+            if pdf_data:
+                st.download_button("📥 Télécharger le PDF", pdf_data, "dossier.pdf", "application/pdf")
+        else:
+            st.info("En attente d'analyse.")
+
+st.caption("LegalOS v2.0 - Reddington Protocol")
