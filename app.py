@@ -1,89 +1,93 @@
 from nicegui import ui
 
-# --- ÉTAT DE L'APPLICATION (Mécanique interne) ---
-class ApplicationState:
+# --- 1. ÉTAT DE L'APPLICATION ---
+class LegalState:
     def __init__(self):
-        self.is_authenticated = False
-        self.current_step = 0
+        self.is_logged_in = False
+        self.step_index = 0
         self.steps = [
             "1. Qualification", "2. Objectif", "3. Base légale", "4. Preuves", 
             "5. Stratégie", "6. Amiable", "7. Procédure", "8. Rédaction", 
             "9. Audience", "10. Jugement", "11. Exécution"
         ]
 
-# Instance unique pour garder les données en mémoire
-state = ApplicationState()
+# Instance unique pour porter les données
+state = LegalState()
 
-# --- LOGIQUE DE NAVIGATION ---
-def attempt_login(email, password):
-    # Identifiants propres
+# --- 2. LOGIQUE DE NAVIGATION ---
+def login(email, password):
+    # Identifiants simplifiés pour ton test
     if email == "admin@legalos.fr" and password == "123":
-        state.is_authenticated = True
-        ui.navigate.to('/') # On recharge pour afficher le dashboard
+        state.is_logged_in = True
+        ui.navigate.to('/') # Force le rafraîchissement propre
     else:
-        ui.notify('Accès refusé : Identifiants invalides', color='negative')
+        ui.notify('Accès refusé : Identifiants incorrects', color='negative')
 
-def handle_logout():
-    state.is_authenticated = False
+def logout():
+    state.is_logged_in = False
     ui.navigate.to('/')
 
-def change_page(delta):
-    state.current_step += delta
+def change_step(delta):
+    state.step_index += delta
     ui.navigate.to('/')
 
-# --- CONSTRUCTION DE L'INTERFACE ---
+# --- 3. CONSTRUCTION DE LA PAGE ---
 @ui.page('/')
-def main_entry():
-    # Couleurs institutionnelles (Banque/Droit)
+def main_page():
+    # Thème institutionnel
     ui.colors(primary='#1a237e', secondary='#42a5f5')
 
-    if not state.is_authenticated:
-        # --- ÉCRAN DE CONNEXION (PROPRE) ---
+    if not state.is_logged_in:
+        # --- ÉCRAN DE CONNEXION ---
         with ui.column().classes('w-full items-center justify-center h-screen bg-slate-900'):
             with ui.card().classes('w-96 p-8 shadow-2xl border-t-8 border-primary'):
-                ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-6 text-slate-800')
+                ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-2 text-slate-800')
+                ui.label('Bienvenue sur Kareem IA LegalOS').classes('text-sm text-center w-full mb-8 text-slate-500 italic')
                 
-                # Champs sans parenthèses pour un look propre
-                user_input = ui.input('Email').classes('w-full')
+                email_input = ui.input('Email').classes('w-full')
                 pass_input = ui.input('Mot de passe', password=True).classes('w-full')
                 
-                ui.button('ACCÉDER', on_click=lambda: attempt_login(user_input.value, pass_input.value)).classes('w-full mt-6 py-4 font-bold')
+                ui.button('ACCÉDER AU SYSTÈME', on_click=lambda: login(email_input.value, pass_input.value)).classes('w-full mt-6 py-4 font-bold uppercase tracking-wide')
     
     else:
-        # --- TABLEAU DE BORD (SYSTÈME FREEMAN) ---
-        with ui.header().classes('bg-slate-900 items-center justify-between p-4 shadow-lg'):
+        # --- TABLEAU DE BORD (L'OUTIL RÉEL) ---
+        # Header
+        with ui.header().classes('bg-slate-900 items-center justify-between p-4 shadow-md'):
             ui.label('LEGALOS | Système Freeman').classes('font-bold text-xl text-white')
-            ui.button(icon='logout', on_click=handle_logout).props('flat color=white')
+            with ui.row().classes('items-center'):
+                ui.label('Mode Expert : Karim Mabrouki').classes('text-xs text-slate-400 mr-4')
+                ui.button(icon='logout', on_click=logout).props('flat color=white')
 
         with ui.row().classes('w-full no-wrap h-screen bg-slate-50'):
-            # Barre latérale : Méthode Reddington
+            # Sidebar : La Méthode Reddington
             with ui.column().classes('w-1/4 p-6 bg-white border-r shadow-inner'):
                 ui.label('MÉTHODE REDDINGTON').classes('text-xs font-black text-slate-400 mb-6 tracking-widest')
                 
-                # Liste visuelle des étapes
-                for index, name in enumerate(state.steps):
-                    is_active = (index == state.current_step)
-                    color = 'text-primary font-bold' if is_active else 'text-slate-400'
-                    icon = '➔ ' if is_active else '○ '
-                    ui.label(f'{icon} {name}').classes(f'py-1 {color}')
+                for i, name in enumerate(state.steps):
+                    active = (i == state.step_index)
+                    style = 'text-primary font-bold bg-blue-50 border-r-4 border-primary' if active else 'text-slate-400'
+                    with ui.row().classes(f'w-full p-2 rounded-l-md {style}'):
+                        ui.label(f"{'➔' if active else '○'} {name}")
 
             # Zone de travail centrale
             with ui.column().classes('w-3/4 p-10 overflow-auto'):
-                ui.label(f'ÉTAPE {state.current_step + 1}').classes('text-primary font-bold tracking-widest text-xs')
-                ui.label(state.steps[state.current_step]).classes('text-4xl font-light mb-8 text-slate-800')
+                ui.label(f'PHASE {state.step_index + 1}').classes('text-primary font-bold text-xs tracking-widest')
+                ui.label(state.steps[state.step_index]).classes('text-4xl font-light mb-8 text-slate-800')
                 
                 with ui.card().classes('w-full p-8 bg-white shadow-xl border-t-4 border-primary'):
-                    if state.current_step == 0:
-                        ui.label('Instruction du Litige').classes('text-h6 mb-4')
-                        ui.textarea(placeholder="Décrivez ici la situation de manière chronologique...").classes('w-full h-64').props('outlined')
+                    # Contenu dynamique
+                    if state.step_index == 0:
+                        ui.label('Analyse factuelle et juridique').classes('text-h6 mb-4')
+                        ui.textarea(placeholder="Décrivez les faits ici de manière chronologique...").classes('w-full h-64').props('outlined')
                     else:
-                        ui.label('Module en attente d\'instruction...').classes('italic text-slate-400')
+                        ui.label(f'Le module {state.steps[state.step_index]} est prêt pour analyse.').classes('italic text-slate-400')
                         ui.skeleton().classes('w-full h-32')
 
-                # Navigation entre les phases
-                with ui.row().classes('w-full mt-12 justify-between'):
-                    ui.button('PRÉCÉDENT', icon='arrow_back', on_click=lambda: change_page(-1)).props('flat').visible(state.current_step > 0)
-                    ui.button('SUIVANT', icon='arrow_forward', on_click=lambda: change_page(1)).props('elevated color=primary').visible(state.current_step < 10)
+                # Navigation
+                with ui.row().classes('w-full mt-12 justify-between items-center'):
+                    ui.button('PRÉCÉDENT', icon='arrow_back', on_click=lambda: change_step(-1)).props('flat').visible(state.step_index > 0)
+                    ui.label(f'{state.step_index + 1} / 11').classes('text-slate-300 font-mono')
+                    ui.button('SUIVANT', icon='arrow_forward', on_click=lambda: change_step(1)).props('elevated color=primary').visible(state.step_index < 10)
 
 # Lancement du serveur
-ui.run(title='LegalOS - Infrastructure', port=8080, reload=True)
+ui.run(title='LegalOS - Kareem IA', port=8080, reload=True)
