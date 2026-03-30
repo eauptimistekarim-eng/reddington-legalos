@@ -1,59 +1,125 @@
 from nicegui import ui
+import asyncio
+# On importe tes fonctions de base de données existantes
+from database import init_db, add_user, login_user, charger_dossier, sauvegarder_dossier
 
-# --- CONFIGURATION COULEURS "BANQUE/SNCF" ---
+# --- INITIALISATION ---
+init_db()
+
+# --- CONFIGURATION DU DESIGN (Look Banque/SaaS) ---
 ui.colors(primary='#1a237e', secondary='#42a5f5', accent='#00c853')
 
-# --- FONCTION DE RÉPONSE DE KAREEM (À CONNECTER À TES PROMPTS) ---
-def analyser_dossier():
-    # Ici, on appellera tes fonctions de logic_streamlit.py plus tard
-    ui.notify('Kareem lance l\'analyse Reddington...', color='primary')
-    chat_box.append('Kareem', 'J\'analyse vos faits. Selon l\'étape 1, votre récit est cohérent. Je prépare la qualification juridique (Étape 2).', 'Kareem', 'https://robohash.org/kareem')
+class LegalOS:
+    def __init__(self):
+        self.user_auth = False
+        self.user_email = ""
+        self.user_name = ""
+        self.etape_actuelle = 1
+        self.etapes = [
+            "Qualification", "Objectif", "Base légale", "Preuves", 
+            "Stratégie", "Amiable", "Procédure", "Rédaction", 
+            "Audience", "Jugement", "Exécution"
+        ]
 
-# --- INTERFACE SAAS PRO ---
-with ui.header().classes('items-center justify-between bg-primary text-white p-4 shadow-2'):
-    with ui.row().classes('items-center'):
-        ui.icon('gavel', size='md')
-        ui.label('LEGALOS').classes('text-2xl font-bold tracking-tighter')
-    ui.badge('SYSTÈME KAREEM V1.0', color='accent').classes('px-4 py-1')
+    def login(self, email, password):
+        user = login_user(email, password)
+        if user:
+            self.user_auth = True
+            self.user_email = email
+            self.user_name = user[0]
+            d = charger_dossier(email)
+            self.etape_actuelle = (d[0] if d else 1) - 1 # NiceGUI utilise des index 0
+            ui.notify(f'Bienvenue {self.user_name}', color='positive')
+            self.render_main_interface.refresh()
+        else:
+            ui.notify('Identifiants incorrects', color='negative')
 
-with ui.row().classes('w-full no-wrap h-screen'):
-    
-    # 1. LE STEPPER VERTICAL (Tes 11 étapes Reddington)
-    with ui.column().classes('w-1/4 bg-slate-50 p-6 border-r'):
-        ui.label('MÉTHODE REDDINGTON').classes('text-xs font-black text-slate-400 mb-4 tracking-widest')
-        with ui.stepper().props('vertical animated gray') as stepper:
-            etapes = [
-                "Analyse des Faits", "Qualification Juridique", "Inventaire des Preuves",
-                "Analyse de la Force Probante", "Ciblage de l'Adversaire", "Stratégie de Recouvrement",
-                "Calcul des Préjudices", "Génération de l'Acte", "Vérification Conformité",
-                "Protocole d'Envoi", "Suivi & Relances"
-            ]
-            for i, nom in enumerate(etapes, 1):
-                with ui.step(f'{i}. {nom}'):
-                    ui.label(f'Instruction en cours pour : {nom}').classes('text-xs italic')
+    def logout(self):
+        self.user_auth = False
+        self.render_main_interface.refresh()
+
+    @ui.refreshable
+    def render_main_interface(self):
+        if not self.user_auth:
+            self.render_login_screen()
+        else:
+            self.render_dashboard()
+
+    def render_login_screen(self):
+        with ui.column().classes('w-full items-center justify-center h-screen bg-slate-900'):
+            with ui.card().classes('w-96 p-8 shadow-2xl border-t-8 border-primary'):
+                ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-4')
+                with ui.tabs().classes('w-full') as tabs:
+                    t1 = ui.tab('Connexion')
+                    t2 = ui.tab('Inscription')
+                with ui.tab_panels(tabs, value=t1).classes('w-full'):
+                    with ui.tab_panel(t1):
+                        e = ui.input('Email').classes('w-full')
+                        p = ui.input('Mot de passe', password=True).classes('w-full')
+                        ui.button('ACCÉDER', on_click=lambda: self.login(e.value, p.value)).classes('w-full mt-4')
+                    with ui.tab_panel(t2):
+                        n = ui.input('Nom').classes('w-full')
+                        em = ui.input('Email').classes('w-full')
+                        pw = ui.input('Mot de passe', password=True).classes('w-full')
+                        ui.button('CRÉER COMPTE', on_click=lambda: ui.notify('Compte créé !')).classes('w-full mt-4')
+
+    def render_dashboard(self):
+        # HEADER
+        with ui.header().classes('items-center justify-between bg-primary text-white p-4 shadow-lg'):
+            ui.label('LEGALOS | Système Freeman').classes('text-xl font-bold tracking-tight')
+            with ui.row().classes('items-center'):
+                ui.label(f'👤 {self.user_name}').classes('mr-4')
+                ui.button(icon='logout', on_click=self.logout, color='white').props('flat rounded')
+
+        # MAIN CONTENT
+        with ui.row().classes('w-full no-wrap h-screen bg-slate-50'):
             
-            with ui.stepper_navigation():
-                ui.button('ÉTAPE SUIVANTE', on_click=stepper.next).props('flat color=primary')
-                ui.button('RETOUR', on_click=stepper.previous).props('flat color=grey')
+            # SIDEBAR (Le Stepper interactif)
+            with ui.column().classes('w-1/4 p-6 bg-white border-r shadow-inner'):
+                ui.label('MÉTHODE DE RÉSOLUTON').classes('text-xs font-black text-slate-400 mb-4')
+                with ui.stepper().props('vertical animated') as stepper:
+                    stepper.value = self.etapes[self.etape_actuelle]
+                    for i, nom in enumerate(self.etapes):
+                        with ui.step(nom):
+                            ui.label(f"Phase {i+1} en cours").classes('text-xs italic text-primary')
+                
+                ui.button('SAUVEGARDER DOSSIER', icon='save', on_click=lambda: ui.notify('Dossier sécurisé')).classes('w-full mt-10').props('outline')
 
-    # 2. ZONE DE TRAVAIL (Saisie et Upload)
-    with ui.column().classes('w-2/4 p-10'):
-        ui.label('Instruction du Litige').classes('text-3xl font-light text-slate-800 mb-6')
-        
-        with ui.card().classes('w-full p-6 shadow-xl border-t-4 border-primary'):
-            ui.label('Récit des faits').classes('text-sm font-bold text-primary mb-2')
-            input_text = ui.textarea(placeholder='Décrivez ici la situation de manière chronologique...').classes('w-full h-48 border-none')
-            
-        with ui.row().classes('mt-6 w-full justify-between items-center'):
-            ui.upload(label='Ajouter des preuves (PDF, Photos)', on_upload=lambda e: ui.notify(f'Fichier {e.name} reçu')).classes('w-64')
-            ui.button('LANCER L\'EXPERTISE', on_click=analyser_dossier, icon='psychology').props('size=lg color=primary rounded')
+            # ZONE DE TRAVAIL
+            with ui.column().classes('w-3/4 p-10 overflow-auto'):
+                ui.label(f'Étape {self.etape_actuelle + 1} : {self.etapes[self.etape_actuelle]}').classes('text-3xl font-light mb-6 text-slate-800')
+                
+                with ui.card().classes('w-full p-8 shadow-sm bg-white'):
+                    # Ici on simule le contenu des vues (view/etape_x.py)
+                    if self.etape_actuelle == 0:
+                        ui.markdown("### Analyse de Qualification")
+                        ui.textarea(label="Décrivez les faits bruts").classes('w-full h-64')
+                    elif self.etape_actuelle == 1:
+                        ui.markdown("### Définition de l'Objectif")
+                        ui.select(['Recouvrement', 'Dommages-Intérêts', 'Annulation de contrat'], label='Objectif visé').classes('w-full')
+                    else:
+                        ui.label('Module expert en cours de chargement...').classes('italic text-grey-6')
 
-    # 3. LE PANEL KAREEM (Le Chat Expert)
-    with ui.column().classes('w-1/4 bg-blue-50 p-6 border-l shadow-inner'):
-        ui.label('CONSEILLER KAREEM').classes('text-xs font-black text-blue-800 mb-4 tracking-widest')
-        with ui.scroll_area().classes('h-full'):
-            chat_box = ui.chat_message('Bonjour Karim. Je suis Kareem. Votre dossier est prêt à être traité par la méthode Reddington. On commence par les faits ?', 
-                                    name='Kareem', stamp='En ligne', avatar='https://robohash.org/kareem')
+                # NAVIGATION BAS DE PAGE
+                with ui.row().classes('w-full mt-8 justify-between'):
+                    ui.button('PRÉCÉDENT', icon='arrow_back', 
+                              on_click=lambda: self.change_step(-1)).props('flat')
+                    ui.button('SUIVANT', icon='arrow_forward', 
+                              on_click=lambda: self.change_step(1)).props('elevated')
 
-# --- LANCEMENT ---
-ui.run(title='LegalOS - Infrastructure IA', port=8080, reload=True)
+    def change_step(self, direction):
+        new_step = self.etape_actuelle + direction
+        if 0 <= new_step < len(self.etapes):
+            self.etape_actuelle = new_step
+            # Sauvegarde automatique en BDD
+            sauvegarder_dossier(self.user_email, self.etape_actuelle + 1, "", "")
+            self.render_main_interface.refresh()
+
+# --- LANCEMENT DE L'APPLICATION ---
+app_logic = LegalOS()
+
+@ui.page('/')
+def main_page():
+    app_logic.render_main_interface()
+
+ui.run(title='LegalOS - Infrastructure Juridique', port=8080)
