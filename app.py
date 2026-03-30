@@ -1,75 +1,89 @@
 from nicegui import ui
 
-# --- ÉTAT DE L'APPLICATION ---
-class State:
-    authenticated = False
-    step = 0
-    steps = [
-        "1. Qualification", "2. Objectif", "3. Base légale", "4. Preuves", 
-        "5. Stratégie", "6. Amiable", "7. Procédure", "8. Rédaction", 
-        "9. Audience", "10. Jugement", "11. Exécution"
-    ]
+# --- ÉTAT DE L'APPLICATION (Mécanique interne) ---
+class ApplicationState:
+    def __init__(self):
+        self.is_authenticated = False
+        self.current_step = 0
+        self.steps = [
+            "1. Qualification", "2. Objectif", "3. Base légale", "4. Preuves", 
+            "5. Stratégie", "6. Amiable", "7. Procédure", "8. Rédaction", 
+            "9. Audience", "10. Jugement", "11. Exécution"
+        ]
 
-app_state = State()
+# Instance unique pour garder les données en mémoire
+state = ApplicationState()
 
-# --- FONCTIONS DE NAVIGATION ---
-def login(email, pwd):
-    if email == "admin@legalos.fr" and pwd == "123":
-        app_state.authenticated = True
-        ui.navigate.to('/') # Relance la page avec l'état True
+# --- LOGIQUE DE NAVIGATION ---
+def attempt_login(email, password):
+    # Identifiants propres
+    if email == "admin@legalos.fr" and password == "123":
+        state.is_authenticated = True
+        ui.navigate.to('/') # On recharge pour afficher le dashboard
     else:
-        ui.notify('Accès refusé', color='negative')
+        ui.notify('Accès refusé : Identifiants invalides', color='negative')
 
-def logout():
-    app_state.authenticated = False
+def handle_logout():
+    state.is_authenticated = False
     ui.navigate.to('/')
 
-def move(delta):
-    app_state.step += delta
+def change_page(delta):
+    state.current_step += delta
     ui.navigate.to('/')
 
-# --- PAGE PRINCIPALE ---
+# --- CONSTRUCTION DE L'INTERFACE ---
 @ui.page('/')
-def main():
-    ui.colors(primary='#1a237e')
+def main_entry():
+    # Couleurs institutionnelles (Banque/Droit)
+    ui.colors(primary='#1a237e', secondary='#42a5f5')
 
-    if not app_state.authenticated:
-        # --- LOGIN SCREEN ---
+    if not state.is_authenticated:
+        # --- ÉCRAN DE CONNEXION (PROPRE) ---
         with ui.column().classes('w-full items-center justify-center h-screen bg-slate-900'):
-            with ui.card().classes('w-96 p-8 shadow-2xl'):
-                ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-6')
-                e = ui.input('Email (admin@legalos.fr)').classes('w-full')
-                p = ui.input('Pass (123)', password=True).classes('w-full')
-                ui.button('ACCÉDER', on_click=lambda: login(e.value, p.value)).classes('w-full mt-4 py-3')
+            with ui.card().classes('w-96 p-8 shadow-2xl border-t-8 border-primary'):
+                ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-6 text-slate-800')
+                
+                # Champs sans parenthèses pour un look propre
+                user_input = ui.input('Email').classes('w-full')
+                pass_input = ui.input('Mot de passe', password=True).classes('w-full')
+                
+                ui.button('ACCÉDER', on_click=lambda: attempt_login(user_input.value, pass_input.value)).classes('w-full mt-6 py-4 font-bold')
     
     else:
-        # --- DASHBOARD ---
-        with ui.header().classes('bg-slate-900 items-center justify-between p-4'):
-            ui.label('LEGALOS | Système Freeman').classes('font-bold text-xl')
-            ui.button(icon='logout', on_click=logout).props('flat color=white')
+        # --- TABLEAU DE BORD (SYSTÈME FREEMAN) ---
+        with ui.header().classes('bg-slate-900 items-center justify-between p-4 shadow-lg'):
+            ui.label('LEGALOS | Système Freeman').classes('font-bold text-xl text-white')
+            ui.button(icon='logout', on_click=handle_logout).props('flat color=white')
 
         with ui.row().classes('w-full no-wrap h-screen bg-slate-50'):
-            # Sidebar
-            with ui.column().classes('w-1/4 p-6 bg-white border-r'):
-                ui.label('MÉTHODE REDDINGTON').classes('text-xs font-black text-slate-400 mb-4')
-                for i, name in enumerate(app_state.steps):
-                    color = 'text-primary font-bold' if i == app_state.step else 'text-slate-400'
-                    ui.label(name).classes(color)
+            # Barre latérale : Méthode Reddington
+            with ui.column().classes('w-1/4 p-6 bg-white border-r shadow-inner'):
+                ui.label('MÉTHODE REDDINGTON').classes('text-xs font-black text-slate-400 mb-6 tracking-widest')
+                
+                # Liste visuelle des étapes
+                for index, name in enumerate(state.steps):
+                    is_active = (index == state.current_step)
+                    color = 'text-primary font-bold' if is_active else 'text-slate-400'
+                    icon = '➔ ' if is_active else '○ '
+                    ui.label(f'{icon} {name}').classes(f'py-1 {color}')
 
-            # Workzone
-            with ui.column().classes('w-3/4 p-10'):
-                ui.label(f'ÉTAPE {app_state.step + 1}').classes('text-primary font-bold')
-                ui.label(app_state.steps[app_state.step]).classes('text-4xl font-light mb-6')
+            # Zone de travail centrale
+            with ui.column().classes('w-3/4 p-10 overflow-auto'):
+                ui.label(f'ÉTAPE {state.current_step + 1}').classes('text-primary font-bold tracking-widest text-xs')
+                ui.label(state.steps[state.current_step]).classes('text-4xl font-light mb-8 text-slate-800')
                 
                 with ui.card().classes('w-full p-8 bg-white shadow-xl border-t-4 border-primary'):
-                    if app_state.step == 0:
-                        ui.textarea(label="Analyse des faits").classes('w-full h-64').props('outlined')
+                    if state.current_step == 0:
+                        ui.label('Instruction du Litige').classes('text-h6 mb-4')
+                        ui.textarea(placeholder="Décrivez ici la situation de manière chronologique...").classes('w-full h-64').props('outlined')
                     else:
-                        ui.label('Module expert prêt.').classes('italic text-slate-400')
+                        ui.label('Module en attente d\'instruction...').classes('italic text-slate-400')
                         ui.skeleton().classes('w-full h-32')
 
-                with ui.row().classes('w-full mt-8 justify-between'):
-                    ui.button('PRÉCÉDENT', on_click=lambda: move(-1)).visible(app_state.step > 0)
-                    ui.button('SUIVANT', on_click=lambda: move(1)).visible(app_state.step < 10)
+                # Navigation entre les phases
+                with ui.row().classes('w-full mt-12 justify-between'):
+                    ui.button('PRÉCÉDENT', icon='arrow_back', on_click=lambda: change_page(-1)).props('flat').visible(state.current_step > 0)
+                    ui.button('SUIVANT', icon='arrow_forward', on_click=lambda: change_page(1)).props('elevated color=primary').visible(state.current_step < 10)
 
-ui.run(title='LegalOS', port=8080)
+# Lancement du serveur
+ui.run(title='LegalOS - Infrastructure', port=8080, reload=True)
