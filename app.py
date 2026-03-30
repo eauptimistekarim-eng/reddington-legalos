@@ -1,85 +1,85 @@
 from nicegui import ui
 
-# --- 1. L'ÉTAT DU SYSTÈME (Simple et robuste) ---
-class GlobalState:
+# --- STRUCTURE DE DONNÉES ---
+class LegalOS:
     def __init__(self):
-        self.is_connected = False
-        self.current_step = 0
-        self.steps = [
+        self.auth = False
+        self.etape = 0
+        self.etapes = [
             "1. Qualification", "2. Objectif", "3. Base légale", "4. Preuves", 
             "5. Stratégie", "6. Amiable", "7. Procédure", "8. Rédaction", 
             "9. Audience", "10. Jugement", "11. Exécution"
         ]
 
-state = GlobalState()
+# Instance unique
+app = LegalOS()
 
-# --- 2. LES ACTIONS ---
-def login_action(email, password):
-    # Test simple : admin / 123
-    if email == "admin@legalos.fr" and password == "123":
-        state.is_connected = True
+# --- LOGIQUE (SANS APPELS DE FONCTIONS SUR DES BOOLÉENS) ---
+def tenter_connexion(e, p):
+    if e == "admin@legalos.fr" and p == "123":
+        app.auth = True
         ui.navigate.to('/')
     else:
         ui.notify('Email ou mot de passe incorrect', color='negative')
 
-def logout_action():
-    state.is_connected = False
+def deconnexion():
+    app.auth = False
     ui.navigate.to('/')
 
-def move_to(delta):
-    state.current_step += delta
+def changer_page(direction):
+    app.etape += direction
     ui.navigate.to('/')
 
-# --- 3. L'INTERFACE ---
+# --- INTERFACE ---
 @ui.page('/')
-def main_page():
+def main():
     ui.colors(primary='#1a237e')
 
-    # CONDITION DE CONNEXION (SANS PARENTHÈSES)
-    if state.is_connected == False:
-        # --- ÉCRAN DE CONNEXION ---
+    # Utilisation d'une comparaison simple pour éviter l'erreur "not callable"
+    if app.auth == False:
+        # --- LOGIN ---
         with ui.column().classes('w-full items-center justify-center h-screen bg-slate-900'):
             with ui.card().classes('w-96 p-8 shadow-2xl border-t-8 border-primary'):
                 ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-2')
                 ui.label('Bienvenue sur Kareem IA LegalOS').classes('text-sm text-center w-full mb-8 italic text-slate-500')
                 
-                email_input = ui.input('Email').classes('w-full')
-                pass_input = ui.input('Mot de passe', password=True).classes('w-full')
+                mail = ui.input('Email').classes('w-full')
+                pwd = ui.input('Mot de passe', password=True).classes('w-full')
                 
-                ui.button('ACCÉDER', on_click=lambda: login_action(email_input.value, pass_input.value)).classes('w-full mt-6 py-4')
+                ui.button('ACCÉDER', on_click=lambda: tenter_connexion(mail.value, pwd.value)).classes('w-full mt-6 py-4 font-bold')
     
     else:
-        # --- L'OUTIL (TABLEAU DE BORD) ---
-        with ui.header().classes('bg-slate-900 items-center justify-between p-4 shadow-lg'):
+        # --- DASHBOARD ---
+        with ui.header().classes('bg-slate-900 items-center justify-between p-4'):
             ui.label('LEGALOS | Système Freeman').classes('font-bold text-xl text-white')
-            ui.button(icon='logout', on_click=logout_action).props('flat color=white text-xs')
+            ui.button(icon='logout', on_click=deconnexion).props('flat color=white')
 
         with ui.row().classes('w-full no-wrap h-screen bg-slate-50'):
-            # Menu de gauche
+            # Sidebar
             with ui.column().classes('w-1/4 p-6 bg-white border-r shadow-inner'):
                 ui.label('MÉTHODE REDDINGTON').classes('text-xs font-black text-slate-400 mb-6 tracking-widest')
-                for i, name in enumerate(state.steps):
-                    is_active = (i == state.current_step)
-                    color = 'text-primary font-bold' if is_active else 'text-slate-400'
-                    ui.label(f"{'➔' if is_active else '○'} {name}").classes(f'py-1 {color}')
+                for i, nom in enumerate(app.etapes):
+                    actif = (i == app.etape)
+                    couleur = 'text-primary font-bold' if actif else 'text-slate-400'
+                    ui.label(f"{'➔' if actif else '○'} {nom}").classes(f'py-1 {couleur}')
 
             # Zone de travail
             with ui.column().classes('w-3/4 p-10 overflow-auto'):
-                ui.label(f'PHASE {state.current_step + 1}').classes('text-primary font-bold text-xs')
-                ui.label(state.steps[state.current_step]).classes('text-4xl font-light mb-8 text-slate-800')
+                ui.label(f'PHASE {app.etape + 1}').classes('text-primary font-bold text-xs')
+                ui.label(app.etapes[app.etape]).classes('text-4xl font-light mb-8 text-slate-800')
                 
                 with ui.card().classes('w-full p-8 bg-white shadow-xl border-t-4 border-primary'):
-                    if state.current_step == 0:
-                        ui.label('Analyse factuelle du litige').classes('text-h6 mb-4')
-                        ui.textarea(placeholder="Racontez les faits...").classes('w-full h-64').props('outlined')
+                    if app.etape == 0:
+                        ui.label('Instruction du Litige').classes('text-h6 mb-4')
+                        ui.textarea(placeholder="Décrivez les faits ici...").classes('w-full h-64').props('outlined')
                     else:
-                        ui.label(f'Module {state.steps[state.current_step]} prêt.').classes('italic text-slate-400')
+                        ui.label('Module prêt pour analyse.').classes('italic text-slate-400')
                         ui.skeleton().classes('w-full h-32')
 
-                # Boutons de navigation
+                # Boutons
                 with ui.row().classes('w-full mt-12 justify-between'):
-                    ui.button('PRÉCÉDENT', icon='arrow_back', on_click=lambda: move_to(-1)).props('flat').visible(state.current_step > 0)
-                    ui.button('SUIVANT', icon='arrow_forward', on_click=lambda: move_to(1)).props('elevated color=primary').visible(state.current_step < 10)
+                    ui.button('PRÉCÉDENT', icon='arrow_back', on_click=lambda: changer_page(-1)).props('flat').visible(app.etape > 0)
+                    ui.button('SUIVANT', icon='arrow_forward', on_click=lambda: changer_page(1)).props('elevated color=primary').visible(app.etape < 10)
 
-# DÉMARRAGE
+# LANCEMENT
 ui.run(title='LegalOS', port=8080)
