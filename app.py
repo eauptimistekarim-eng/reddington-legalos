@@ -1,19 +1,10 @@
 from nicegui import ui
-# Import de tes fonctions de base de données
-try:
-    from database import init_db, add_user, login_user, charger_dossier, sauvegarder_dossier
-    init_db()
-except ImportError:
-    # Au cas où database.py n'est pas trouvé pour le test
-    def login_user(e, p): return None
-    def charger_dossier(e): return None
-    def sauvegarder_dossier(e, et, f, b): pass
 
+# --- CONFIGURATION ---
 class LegalOS:
     def __init__(self):
         self.user_auth = False
-        self.user_name = ""
-        self.user_email = ""
+        self.user_name = "Karim Mabrouki"
         self.etape_actuelle = 0
         self.etapes = [
             "1. Qualification", "2. Objectif", "3. Base légale", "4. Preuves", 
@@ -21,85 +12,75 @@ class LegalOS:
             "9. Audience", "10. Jugement", "11. Exécution"
         ]
 
-    def login(self, email, password):
-        # TEST PRIORITAIRE : admin / 123
-        if email == "admin@legalos.fr" and password == "123":
+    def login(self, e, p):
+        # On force l'entrée pour le test : admin / 123
+        if e == "admin@legalos.fr" and p == "123":
             self.user_auth = True
-            self.user_name = "Karim Mabrouki (Admin)"
-            self.user_email = email
-            ui.notify('Accès Admin accordé', color='positive')
-            self.container.refresh() # C'est ICI que la magie opère
-            return
-
-        # VRAIE BDD
-        user = login_user(email, password)
-        if user:
-            self.user_auth = True
-            self.user_name = user[0]
-            self.user_email = email
-            d = charger_dossier(email)
-            if d: self.etape_actuelle = d[0] - 1
-            self.container.refresh()
+            ui.notify('Accès Système Freeman Activé', color='positive')
+            ui.navigate.to('/') # On force la redirection pour rafraîchir proprement
         else:
-            ui.notify('Identifiants incorrects', color='negative')
+            ui.notify('Erreur d\'identification', color='negative')
 
-    @ui.refreshable
-    def container(self):
-        """Cette fonction décide quoi afficher"""
-        if not self.user_auth:
-            self.render_login()
-        else:
-            self.render_app()
+    def logout(self):
+        self.user_auth = False
+        ui.navigate.to('/')
 
-    def render_login(self):
-        with ui.column().classes('w-full items-center justify-center h-screen bg-slate-900'):
-            with ui.card().classes('w-96 p-8 shadow-2xl border-t-8 border-indigo-900'):
-                ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-4')
-                ui.label('SYSTÈME FREEMAN').classes('text-xs text-center w-full mb-6 text-slate-400 tracking-widest')
-                
-                e = ui.input('Email').classes('w-full')
-                p = ui.input('Mot de passe', password=True).classes('w-full').on('keydown.enter', lambda: self.login(e.value, p.value))
-                
-                ui.button('ACCÉDER', on_click=lambda: self.login(e.value, p.value)).classes('w-full mt-6 py-4 bg-indigo-900 text-white')
-
-    def render_app(self):
-        # HEADER
-        with ui.header().classes('items-center justify-between bg-indigo-950 text-white p-4'):
-            ui.label('LEGALOS | Tableau de bord').classes('font-bold')
-            ui.button(icon='logout', on_click=lambda: setattr(self, 'user_auth', False) or self.container.refresh(), color='white').props('flat round')
-
-        # MAIN CONTENT
-        with ui.row().classes('w-full no-wrap h-screen bg-slate-50'):
-            # SIDEBAR
-            with ui.column().classes('w-1/4 p-6 bg-white border-r shadow-inner'):
-                ui.label('PROGRESSION').classes('text-xs font-black text-slate-400 mb-4')
-                with ui.stepper().props('vertical animated') as stepper:
-                    stepper.value = self.etapes[self.etape_actuelle]
-                    for nom in self.etapes:
-                        ui.step(nom)
-            
-            # WORKZONE
-            with ui.column().classes('w-3/4 p-10 overflow-auto'):
-                ui.label(f'ÉTAPE {self.etape_actuelle + 1}').classes('text-xs font-bold text-indigo-800')
-                ui.label(self.etapes[self.etape_actuelle]).classes('text-4xl font-light mb-6')
-                
-                with ui.card().classes('w-full p-8 shadow-sm bg-white'):
-                    ui.textarea(label="Instruction du dossier...").classes('w-full h-64')
-
-                with ui.row().classes('w-full mt-8 justify-between'):
-                    ui.button('PRÉCÉDENT', on_click=lambda: self.move(-1)).props('flat').visible(self.etape_actuelle > 0)
-                    ui.button('SUIVANT', on_click=lambda: self.move(1)).props('elevated').visible(self.etape_actuelle < 10)
-
-    def move(self, d):
-        self.etape_actuelle += d
-        self.container.refresh()
-
-# Lancement
+# Instance unique
 legal = LegalOS()
 
 @ui.page('/')
-def index():
-    ui.colors(primary='#1a237e')
-    legal.container()
+def main_page():
+    ui.colors(primary='#1a237e', secondary='#42a5f5', accent='#00c853')
 
-ui.run(port=8080, title='LegalOS')
+    if not legal.user_auth:
+        # --- ÉCRAN DE CONNEXION ---
+        with ui.column().classes('w-full items-center justify-center h-screen bg-slate-900'):
+            with ui.card().classes('w-96 p-8 shadow-2xl border-t-8 border-primary'):
+                ui.label('⚖️ LegalOS').classes('text-3xl font-bold text-center w-full mb-6')
+                email = ui.input('Email (admin@legalos.fr)').classes('w-full')
+                pwd = ui.input('Mot de passe (123)', password=True).classes('w-full')
+                ui.button('ACCÉDER', on_click=lambda: legal.login(email.value, pwd.value)).classes('w-full mt-6 py-4')
+    
+    else:
+        # --- TABLEAU DE BORD (LE VRAI OUTIL) ---
+        # 1. HEADER
+        with ui.header().classes('items-center justify-between bg-slate-900 text-white p-4 shadow-lg'):
+            ui.label('LEGALOS | Système Freeman').classes('text-xl font-bold tracking-tight')
+            ui.button(icon='logout', on_click=legal.logout, color='white').props('flat round')
+
+        # 2. CONTENU PRINCIPAL
+        with ui.row().classes('w-full no-wrap h-screen bg-slate-50'):
+            
+            # SIDEBAR STEPPER
+            with ui.column().classes('w-1/4 p-6 bg-white border-r shadow-inner'):
+                ui.label('MÉTHODE REDDINGTON').classes('text-xs font-black text-slate-400 mb-6 tracking-widest')
+                with ui.stepper().props('vertical animated gray') as stepper:
+                    # On force la valeur sur l'étape actuelle
+                    stepper.value = legal.etapes[legal.etape_actuelle]
+                    for nom in legal.etapes:
+                        ui.step(nom)
+
+            # ZONE DE TRAVAIL
+            with ui.column().classes('w-3/4 p-10 overflow-auto'):
+                ui.label(f'PHASE {legal.etape_actuelle + 1}').classes('text-xs font-bold text-primary tracking-widest')
+                ui.label(legal.etapes[legal.etape_actuelle]).classes('text-4xl font-light mb-8 text-slate-800')
+                
+                with ui.card().classes('w-full p-8 shadow-xl bg-white border-t-4 border-primary'):
+                    if legal.etape_actuelle == 0:
+                        ui.label('Analyse factuelle du litige').classes('text-h6 mb-2 text-slate-700')
+                        ui.textarea(label="Décrivez les faits ici...").classes('w-full h-64').props('outlined')
+                    else:
+                        ui.label(f"Module {legal.etapes[legal.etape_actuelle]} prêt.").classes('italic text-slate-400')
+                        ui.skeleton().classes('w-full h-32')
+
+                # BOUTONS NAVIGATION
+                with ui.row().classes('w-full mt-12 justify-between items-center'):
+                    def move(step):
+                        legal.etape_actuelle += step
+                        ui.navigate.to('/') # Rafraîchit la vue
+                    
+                    ui.button('PRÉCÉDENT', icon='arrow_back', on_click=lambda: move(-1)).props('flat').visible(legal.etape_actuelle > 0)
+                    ui.button('SUIVANT', icon='arrow_forward', on_click=lambda: move(1)).props('elevated color=primary').visible(legal.etape_actuelle < 10)
+
+# Lancement
+ui.run(title='LegalOS - Karim Mabrouki', port=8080, reload=True)
