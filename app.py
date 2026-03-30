@@ -1,98 +1,133 @@
 from nicegui import ui
 import asyncio
 
-# --- MOTEUR DE FONCTIONS REDDINGTON ---
-def detect_domain(text):
-    keywords = {"travail": ["salaire", "licenciement"], "contrat": ["contrat", "obligation"], "penal": ["plainte", "infraction"]}
-    for domain, words in keywords.items():
-        if any(w in text.lower() for w in words): return domain
-    return "civil"
-
-def score_case_strength(dossier_len):
-    return min(dossier_len * 2, 10)
-
-class LegalOS_Engine:
+# --- 1. MOTEUR KAREEM IA (LOGIQUE MÉTIER & PERSISTANCE) ---
+class KareemIA:
     def __init__(self):
         self.user_authenticated = False
         self.step_index = 0
-        self.steps = ["Qualification", "Objectif", "Base légale", "Preuves", "Stratégie", "Amiable", "Procédure", "Rédaction", "Audience", "Jugement", "Recours"]
+        self.steps = [
+            "Qualification", "Objectif", "Base légale", "Preuves / Dossier", 
+            "Analyse stratégique", "Phase amiable", "Choix de procédure", 
+            "Rédaction juridique", "Audience", "Jugement", "Exécution / Recours"
+        ]
+        # Initialisation propre des dictionnaires
         self.data = {i: "" for i in range(11)}
-        self.ai_feedback = {i: "En attente d'analyse..." for i in range(11)}
-        self.dossier_len = 0
+        self.ai_feedback = {i: "Kareem IA attend votre saisie..." for i in range(11)}
+        self.is_pro = False
 
     async def analyser_ia(self, index):
         txt = self.data[index]
-        if len(txt) < 5:
-            ui.notify("Saisie trop courte", color='warning')
+        if len(txt) < 8:
+            ui.notify("Kareem : 'Saisie trop courte pour une analyse sérieuse.'", color='warning')
             return
+
+        ui.notify("Kareem IA analyse...", icon='auto_awesome')
+        await asyncio.sleep(1.2)
+
+        # LOGIQUE D'AUTOMATISATION (TA VISION)
+        if index == 0: # Qualification automatique de la base légale
+            if any(w in txt.lower() for w in ["travail", "salaire", "licenciement", "patron"]):
+                self.data[2] = "Code du Travail - Article L1232-1 (Rupture du contrat)"
+                self.ai_feedback[2] = "Kareem : J'ai pré-rempli la base légale en Droit du Travail."
+            elif any(w in txt.lower() for w in ["contrat", "vente", "achat", "rembourser"]):
+                self.data[2] = "Code Civil - Article 1103 (Force obligatoire des contrats)"
+                self.ai_feedback[2] = "Kareem : J'ai pré-rempli la base légale en Droit Civil."
+
+        # FEEDBACK PERSONNALISÉ
+        res = f"✅ Kareem : Analyse de la phase '{self.steps[index]}' terminée. "
+        if index == 3: res += "N'oubliez pas d'uploader les originaux."
+        if index == 4: res += "Conseil : Tentez une médiation, les risques sont modérés."
         
-        ui.notify("Analyse Reddington en cours...", icon='psychology')
-        await asyncio.sleep(1)
+        self.ai_feedback[index] = res
+        ui.notify("Analyse validée", color='positive')
 
-        # Logique basée sur tes fonctions
-        if index == 0:
-            dom = detect_domain(txt)
-            self.ai_feedback[index] = f"🧠 IA : Domaine {dom.upper()} détecté. Précisez les dates clés."
-        elif index == 3:
-            self.dossier_len += 1
-            score = score_case_strength(self.dossier_len)
-            self.ai_feedback[index] = f"📂 Dossier : Force de {score}/10. Ajoutez d'autres preuves."
-        else:
-            self.ai_feedback[index] = "✅ Étape validée par le système Freeman."
+moteur = KareemIA()
 
-        ui.notify("Terminé. Passage à l'étape suivante.", color='positive')
-        await asyncio.sleep(0.5)
-        if self.step_index < 10:
-            self.step_index += 1
-            ui.navigate.to('/')
-
-moteur = LegalOS_Engine()
-
+# --- 2. INTERFACE UTILISATEUR (UX FREEMAN) ---
 @ui.page('/')
-def main_view():
-    ui.colors(primary='#0f172a', secondary='#10b981')
+def main():
+    ui.colors(primary='#0f172a', secondary='#10b981', accent='#f59e0b')
 
     if not moteur.user_authenticated:
+        # --- LOGIN / INSCRIPTION ---
         with ui.column().classes('w-full items-center justify-center h-screen bg-slate-900'):
-            with ui.card().classes('w-96 p-10 shadow-2xl rounded-2xl'):
-                ui.label('⚖️ LegalOS').classes('text-4xl font-bold text-center w-full mb-8')
-                ui.button('ACTIVER LE SYSTÈME', on_click=lambda: setattr(moteur, 'user_authenticated', True) or ui.navigate.to('/')).classes('w-full')
+            with ui.card().classes('w-full max-w-sm p-10 shadow-2xl border-t-8 border-primary rounded-2xl'):
+                ui.label('⚖️ LEGALOS').classes('text-4xl font-black text-center w-full mb-2')
+                ui.label('SYSTÈME FREEMAN').classes('text-[10px] text-center w-full mb-8 text-slate-400 tracking-[.3em]')
+                
+                email = ui.input('Email (admin@legalos.fr)').classes('w-full').props('outlined')
+                password = ui.input('Mot de passe (123)', password=True).classes('w-full mt-2').props('outlined')
+                
+                with ui.row().classes('w-full justify-between mt-8 items-center'):
+                    ui.button('S\'INSCRIRE', on_click=lambda: ui.notify('Ouverture des inscriptions bientôt')).props('flat no-caps')
+                    ui.button('CONNEXION', on_click=lambda: (setattr(moteur, 'user_authenticated', True) or ui.navigate.to('/')) 
+                              if email.value=="admin@legalos.fr" and password.value=="123" 
+                              else ui.notify('Erreur identifiants', color='negative')).classes('px-8 py-2 shadow-lg font-bold')
+    
     else:
-        with ui.header().classes('bg-slate-900 items-center justify-between p-4'):
-            ui.label('LEGALOS | SYSTEM FREEMAN').classes('font-bold text-xl text-white')
-            ui.button(icon='logout', on_click=lambda: setattr(moteur, 'user_authenticated', False) or ui.navigate.to('/')).props('flat color=white')
+        # --- APP DASHBOARD ---
+        with ui.header().classes('bg-slate-900 items-center justify-between p-4 shadow-xl border-b border-slate-800'):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon('balance', color='white').classes('text-2xl')
+                ui.label('KAREEM IA').classes('font-black text-xl text-white tracking-tighter')
+            
+            with ui.row().classes('items-center gap-4'):
+                ui.button('PRO PLAN', icon='bolt', on_click=lambda: ui.notify('Redirection Stripe...')).props('flat color=amber').classes('text-xs font-bold')
+                ui.button(icon='logout', on_click=lambda: setattr(moteur, 'user_authenticated', False) or ui.navigate.to('/')).props('flat color=white')
 
         with ui.row().classes('w-full no-wrap h-screen bg-slate-50'):
-            # Sidebar
-            with ui.column().classes('w-1/4 p-6 bg-white border-r'):
-                ui.label('PHASES REDDINGTON').classes('text-xs font-black text-slate-400 mb-6 tracking-widest')
+            # SIDEBAR DYNAMIQUE
+            with ui.column().classes('w-80 p-6 bg-white border-r shadow-inner overflow-y-auto'):
+                ui.label('MÉTHODE REDDINGTON').classes('text-[10px] font-black text-slate-400 mb-6 tracking-widest uppercase')
                 for i, name in enumerate(moteur.steps):
-                    active = (i == moteur.step_index)
-                    style = 'bg-slate-900 text-white shadow-lg' if active else 'text-slate-300'
-                    ui.label(f"{i+1}. {name}").classes(f'p-3 rounded-lg mb-1 transition-all {style}')
+                    def change_step(new_idx=i):
+                        moteur.step_index = new_idx
+                        ui.navigate.to('/')
+                    
+                    is_active = (i == moteur.step_index)
+                    color = 'bg-slate-900 text-white shadow-xl' if is_active else 'text-slate-400 hover:bg-slate-100'
+                    ui.button(f"{i+1}. {name}", on_click=change_step).classes(f'w-full text-left justify-start p-4 rounded-xl mb-1 transition-all no-caps {color}').props('flat' if not is_active else '')
 
-            # Zone de travail
-            with ui.column().classes('w-3/4 p-12 overflow-auto'):
-                ui.linear_progress(value=(moteur.step_index + 1) / 11).classes('mb-8 rounded-full h-2')
-                ui.label(moteur.steps[moteur.step_index]).classes('text-5xl font-black text-slate-800 mb-10')
+            # ZONE DE TRAVAIL (THE WORKSPACE)
+            with ui.column().classes('flex-grow p-12 overflow-auto'):
+                # Barre de progression
+                ui.linear_progress(value=(moteur.step_index + 1) / 11).classes('mb-8 rounded-full h-1.5 shadow-sm')
+                
+                with ui.row().classes('w-full justify-between items-end mb-10'):
+                    with ui.column().classes('gap-0'):
+                        ui.label(f'PHASE {moteur.step_index + 1}').classes('text-primary font-black text-[10px] tracking-widest')
+                        ui.label(moteur.steps[moteur.step_index]).classes('text-6xl font-black text-slate-800 tracking-tighter')
 
-                with ui.row().classes('w-full no-wrap gap-8'):
-                    with ui.card().classes('w-2/3 p-8 shadow-xl rounded-2xl'):
-                        ui.label('SAISIE DES DONNÉES').classes('text-xs font-bold text-slate-400 mb-4')
-                        area = ui.textarea(placeholder="Décrivez ici...").classes('w-full h-64').props('outlined')
-                        area.bind_value(moteur.data, moteur.step_index)
+                with ui.row().classes('w-full no-wrap gap-8 items-start'):
+                    # CARTE DE RÉDACTION
+                    with ui.card().classes('w-2/3 p-8 shadow-2xl rounded-3xl border-none bg-white'):
+                        ui.label('DÉTAILS DU DOSSIER').classes('text-[10px] font-bold text-slate-400 mb-4 tracking-widest uppercase')
                         
-                        # NAVIGATION SANS LE BUG .VISIBLE()
-                        with ui.row().classes('w-full justify-between mt-6'):
+                        # Interface spécifique par étape
+                        idx = moteur.step_index
+                        if idx == 3:
+                            ui.upload(label='📁 Déposer vos preuves (PDF, PNG, JPG)', on_upload=lambda: ui.notify('Fichier reçu')).classes('w-full mb-4').props('flat bordered')
+                        
+                        area = ui.textarea(placeholder="Décrivez les faits ici...").classes('w-full h-80 text-lg').props('outlined rounded')
+                        area.bind_value(moteur.data, idx)
+                        
+                        with ui.row().classes('w-full justify-between mt-8'):
                             if moteur.step_index > 0:
-                                ui.button('PRÉCÉDENT', on_click=lambda: setattr(moteur, 'step_index', moteur.step_index - 1) or ui.navigate.to('/')).props('flat')
-                            else:
-                                ui.label('')
-                            ui.button('ANALYSER ET SUIVANT ➔', on_click=lambda: moteur.analyser_ia(moteur.step_index)).props('color=secondary').classes('px-8 shadow-lg')
+                                ui.button('RETOUR', on_click=lambda: (setattr(moteur, 'step_index', moteur.step_index - 1) or ui.navigate.to('/'))).props('flat color=slate-400')
+                            else: ui.label('')
+                            ui.button('ANALYSER AVEC KAREEM ➔', on_click=lambda: moteur.analyser_ia(moteur.step_index)).classes('px-10 py-3 font-bold shadow-2xl shadow-green-200 text-lg').props('color=secondary rounded')
 
-                    with ui.column().classes('w-1/3'):
-                        with ui.card().classes('w-full p-6 bg-slate-800 text-white rounded-2xl border-l-8 border-secondary shadow-xl'):
-                            ui.label('FEEDBACK IA').classes('text-[10px] font-bold text-secondary mb-4 tracking-widest')
-                            ui.label().bind_text_from(moteur.ai_feedback, moteur.step_index).classes('italic text-sm')
+                    # CARTE KAREEM IA (FEEDBACK)
+                    with ui.column().classes('w-1/3 gap-4'):
+                        with ui.card().classes('w-full p-6 bg-slate-900 text-white rounded-3xl shadow-2xl border-l-8 border-secondary'):
+                            with ui.row().classes('items-center gap-2 mb-4'):
+                                ui.icon('psychology', color='secondary')
+                                ui.label('KAREEM IA').classes('text-[10px] font-bold text-secondary tracking-widest')
+                            
+                            ui.label().bind_text_from(moteur.ai_feedback, moteur.step_index).classes('italic text-sm leading-relaxed text-slate-300')
 
-ui.run(title='LegalOS', port=8088, reload=False)
+                        if moteur.step_index < 10:
+                            ui.button('Étape suivante', icon='chevron_right', on_click=lambda: (setattr(moteur, 'step_index', moteur.step_index + 1) or ui.navigate.to('/'))).classes('w-full py-4 text-slate-400').props('flat')
+
+ui.run(title='LegalOS - Kareem IA', port=8088, reload=False)
