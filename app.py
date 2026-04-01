@@ -1,111 +1,134 @@
 import streamlit as st
+import pandas as pd
+from database import init_db, login_user, add_user, upgrade_to_premium
+from processor import extract_text_from_pdf, classifier_procedure_universelle, calculer_score_victoire, get_freeman_prompt
 import time
-from groq import Groq
-# On importe nos fonctions depuis le fichier processor.py (qui doit être dans le même dossier)
-from processor import extract_text_from_pdf, get_freeman_prompt
 
-# --- CONFIGURATION DE LA PAGE ---
-st.set_page_config(page_title="LegalOS - Kareem IA", page_icon="⚖️", layout="wide")
+# --- INITIALISATION ---
+init_db()
+st.set_page_config(page_title="LegalOS - Kareem IA", layout="wide", initial_sidebar_state="expanded")
 
-# Style CSS pour l'interface "Dark Mode" et la boîte de réponse de l'IA
+# --- DESIGN FIXE "LEGALOS GOLD" ---
 st.markdown("""
     <style>
-    .main { background-color: #0f172a; color: white; }
+    .stApp { background-color: #0f172a; color: #f8fafc; }
+    [data-testid="stSidebar"] { background-color: #1e293b; border-right: 1px solid #334155; }
+    .main-title { color: #10b981; font-size: 2.5rem; font-weight: bold; margin-bottom: 20px; text-align: center; }
     .kareem-box { 
-        background-color: #1e293b; 
-        color: #f8fafc; 
-        padding: 20px; 
-        border-radius: 12px; 
-        border-left: 5px solid #10b981; 
-        font-size: 1.1rem;
-        margin-top: 10px;
+        background-color: #1e293b; padding: 20px; border-radius: 12px; 
+        border-left: 5px solid #10b981; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        margin-top: 15px; line-height: 1.6;
     }
-    .stButton>button { width: 100%; border-radius: 8px; background-color: #10b981; color: white; font-weight: bold; }
+    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
+    .status-badge { padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONNEXION À L'IA (GROQ) ---
-if "GROQ_API_KEY" in st.secrets:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-else:
-    client = None
-    st.warning("⚠️ Clé API Groq manquante dans les secrets.")
+# --- GESTION DE SESSION ---
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'user_data' not in st.session_state: st.session_state.user_data = None
+if 'current_step' not in st.session_state: st.session_state.current_step = 1
 
-# --- ÉTAPES DE LA MÉTHODE FREEMAN ---
-STEPS = ["Qualification", "Objectif", "Base Légale", "Preuves", "Risques", "Amiable", "Procédure", "Actes", "Audience", "Jugement", "Recours"]
+# --- ÉCRAN DE CONNEXION ---
+if not st.session_state.logged_in:
+    st.markdown('<p class="main-title">⚖️ LegalOS Access</p>', unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["Connexion", "Inscription / Clé Premium"])
+    
+    with tab1:
+        email = st.text_input("Email Professionnel")
+        password = st.text_input("Mot de passe", type="password")
+        if st.button("Accéder au Cabinet"):
+            result = login_user(email, password)
+            if result:
+                st.session_state.logged_in = True
+                st.session_state.user_data = {"name": result[0], "role": result[1], "premium": result[2], "email": email}
+                st.success(f"Bienvenue, Maître {result[0]}")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Identifiants incorrects.")
 
-# --- INITIALISATION DES VARIABLES DE SESSION ---
-if 'step' not in st.session_state: st.session_state.step = 0
-if 'data' not in st.session_state: st.session_state.data = {i: "" for i in range(len(STEPS))}
-if 'ai_reports' not in st.session_state: st.session_state.ai_reports = {i: "" for i in range(len(STEPS))}
+    with tab2:
+        new_name = st.text_input("Nom Complet")
+        new_email = st.text_input("Email")
+        new_pw = st.text_input("Créer un mot de passe", type="password")
+        access_key = st.text_input("Clé d'activation unique (Premium)")
+        
+        if st.button("Créer mon compte"):
+            if add_user(new_email, new_pw, new_name):
+                if access_key == "FREEMAN-2026": # Ta clé à usage unique
+                    upgrade_to_premium(new_email)
+                st.success("Compte créé ! Connectez-vous.")
+            else:
+                st.error("Cet email est déjà utilisé.")
+    st.stop()
 
-# --- FONCTION EFFET MACHINE À ÉCRIRE ---
-def typewriter_effect(text):
-    container = st.empty()
-    full_text = ""
-    for char in text:
-        full_text += char
-        container.markdown(f'<div class="kareem-box">{full_text}▌</div>', unsafe_allow_html=True)
-        time.sleep(0.005)
-    container.markdown(f'<div class="kareem-box">{full_text}</div>', unsafe_allow_html=True)
+# --- INTERFACE PRINCIPALE (Post-Connexion) ---
+with st.sidebar:
+    st.markdown(f"### 👤 {st.session_state.user_data['name']}")
+    if st.session_state.user_data['premium']:
+        st.markdown('<span style="background:#10b981; color:white; padding:2px 8px; border-radius:10px;">PREMIUM</span>', unsafe_allow_html=True)
+    
+    st.divider()
+    st.subheader("📁 Gestion du Dossier")
+    # Menu basé sur tes notes : Nouveau, En cours, Finalisé, Terminé
+    status = st.selectbox("Statut du dossier", ["NOUVEAU DOSSIER", "DOSSIER EN COURS", "À FINALISER", "TERMINÉ"])
+    
+    st.divider()
+    st.subheader("📍 Étapes Freeman")
+    step_options = {
+        1: "1. Qualification", 2: "2. Objectif", 3: "3. Base Légale",
+        4: "4. Inventaire", 5: "5. Risques", 6: "6. Amiable",
+        7: "7. Stratégie", 8: "8. Rédaction", 9: "9. Audience",
+        10: "10. Jugement", 11: "11. Recours"
+    }
+    selected_step = st.radio("Navigation", list(step_options.values()), index=st.session_state.current_step-1)
+    st.session_state.current_step = int(selected_step.split('.')[0])
 
-# --- INTERFACE PRINCIPALE ---
-st.title(f"⚖️ LegalOS - Étape {st.session_state.step + 1} : {STEPS[st.session_state.step]}")
+# --- CONTENU DES ÉTAPES ---
+st.markdown(f'# {selected_step}')
 
-# CRÉATION DES COLONNES (C'est ici que l'erreur est corrigée !)
-col_left, col_right = st.columns([1.5, 1.5])
+col_left, col_right = st.columns([1, 1])
 
 with col_left:
-    st.subheader("📁 Dossier & Documents")
+    st.subheader("📥 Saisie des éléments")
     
-    # Zone d'upload PDF
-    uploaded_file = st.file_uploader("Glissez votre document juridique (PDF)", type="pdf")
-    if uploaded_file:
-        with st.spinner("Extraction du texte..."):
-            extracted_text = extract_text_from_pdf(uploaded_file)
-            st.session_state.data[st.session_state.step] = extracted_text[:4000] # Limite pour l'IA
-            st.success("Analyse du PDF terminée !")
+    if st.session_state.current_step == 1:
+        uploaded_file = st.file_uploader("Glisser un PDF (Contrat, Courrier...)", type="pdf")
+        user_text = st.text_area("Faits et éléments du dossier :", height=300, placeholder="Décrivez les faits ici...")
+        
+        if uploaded_file:
+            pdf_text = extract_text_from_pdf(uploaded_file)
+            user_text += f"\n\n--- CONTENU DU PDF ---\n{pdf_text}"
+            
+        if st.button("🚀 LANCER L'ANALYSE KAREEM"):
+            with st.spinner("Kareem analyse le dossier..."):
+                # Simulation de l'appel IA (à lier à ta fonction processor)
+                branche, _ = classifier_procedure_universelle(user_text)
+                score = calculer_score_victoire(user_text, branche, a_des_preuves=bool(uploaded_file))
+                
+                st.session_state['last_analysis'] = {
+                    "branche": branche,
+                    "score": score,
+                    "text": f"Analyse Freeman terminée pour l'étape {selected_step}."
+                }
 
-    # Zone de texte manuelle
-    user_input = st.text_area("Notes ou faits du dossier :", 
-                              value=st.session_state.data[st.session_state.step], 
-                              height=300)
-    st.session_state.data[st.session_state.step] = user_input
-
-    # Bouton d'analyse
-    if st.button("🚀 LANCER L'ANALYSE KAREEM"):
-        if not user_input:
-            st.error("Veuillez entrer du texte ou un PDF.")
-        elif client is None:
-            st.error("L'IA n'est pas configurée (Clé API).")
-        else:
-            with st.spinner("Kareem analyse votre dossier..."):
-                prompt = get_freeman_prompt(STEPS[st.session_state.step], user_input)
-                try:
-                    chat_completion = client.chat.completions.create(
-                        messages=[{"role": "user", "content": prompt}],
-                        model="llama-3.3-70b-versatile",
-                    )
-                    st.session_state.ai_reports[st.session_state.step] = chat_completion.choices[0].message.content
-                except Exception as e:
-                    st.error(f"Erreur IA : {e}")
+    elif st.session_state.current_step == 2:
+        st.info("🎯 L'IA va maintenant déterminer l'objectif selon la qualification de l'étape 1.")
+        # Ici on ajoutera la logique pour proposer des objectifs à choisir (ton schéma étape 2)
 
 with col_right:
-    st.subheader("🤖 Analyse de l'IA")
-    if st.session_state.ai_reports[st.session_state.step]:
-        # On affiche le résultat stocké
-        st.markdown(f'<div class="kareem-box">{st.session_state.ai_reports[st.session_state.step]}</div>', unsafe_allow_html=True)
+    st.subheader("🤖 Analyse de Kareem")
+    if 'last_analysis' in st.session_state:
+        ana = st.session_state['last_analysis']
+        
+        # Dashboard de l'IA
+        c1, c2 = st.columns(2)
+        c1.metric("Branche", ana['branche'])
+        c2.metric("Succès estimé", f"{ana['score']}%")
+        st.progress(ana['score']/100)
+        
+        st.markdown(f'<div class="kareem-box">{ana["text"]}</div>', unsafe_allow_html=True)
     else:
-        st.info("En attente de l'analyse... Cliquez sur le bouton à gauche.")
-
-# --- NAVIGATION ---
-st.divider()
-c1, c2, c3 = st.columns([1, 1, 1])
-with c1:
-    if st.button("⬅️ Étape Précédente") and st.session_state.step > 0:
-        st.session_state.step -= 1
-        st.rerun()
-with c3:
-    if st.button("Étape Suivante ➡️") and st.session_state.step < len(STEPS) - 1:
-        st.session_state.step += 1
-        st.rerun()
+        st.info("En attente de données pour lancer Kareem...")
