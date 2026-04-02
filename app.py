@@ -1,8 +1,9 @@
 import streamlit as st
 import time
 from groq import Groq
-from database import *
+from database import init_db, login_user, save_step_progress, get_full_history, get_user_dossiers
 
+# --- INITIALISATION ---
 init_db()
 GROQ_KEY = "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"
 STRIPE_LINK = "https://buy.stripe.com/9B6aEW6QF6Z6bFz3RY6c001"
@@ -10,86 +11,113 @@ client = Groq(api_key=GROQ_KEY)
 
 st.set_page_config(page_title="LegalOS - Kareem IA", layout="wide")
 
-# --- DESIGN FIGÉ (Identique aux captures) ---
+# --- DESIGN FIGÉ (IDENTIQUE À TES CAPTURES) ---
 st.markdown("""
     <style>
     .stApp { background-color: #0f172a; color: #f8fafc; }
     .kareem-card { background-color: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
     .status-bar { background-color: #334155; height: 10px; border-radius: 5px; margin: 15px 0; overflow: hidden; }
     .status-fill { background: linear-gradient(90deg, #10b981, #3b82f6); height: 100%; border-radius: 5px; width: 85%; }
+    .stButton>button { background-color: #10b981 !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- EFFET MACHINE À ÉCRIRE ---
-def typewriter(text):
-    container = st.empty()
-    full_text = ""
-    for char in text:
-        full_text += char
-        container.markdown(f'<div class="kareem-card"><p style="color:#10b981; font-weight:bold;">🤖 Kareem IA :</p>{full_text}▌</div>', unsafe_allow_html=True)
-        time.sleep(0.005)
-    container.markdown(f'<div class="kareem-card"><p style="color:#10b981; font-weight:bold;">🤖 Kareem IA :</p>{full_text}</div>', unsafe_allow_html=True)
+# --- INITIALISATION DES VARIABLES DE SESSION ---
+if 'auth' not in st.session_state:
+    st.session_state.auth = False
+if 'page' not in st.session_state:
+    st.session_state.page = "selection"
 
-# --- NAVIGATION ---
-if 'auth' not in st.session_state: st.session_state.auth = False
+# --- 1. FORMULAIRE DE CONNEXION (AFFICHAGE FORCÉ SI NON CONNECTÉ) ---
 if not st.session_state.auth:
-    # (Composant Login ici - omit pour brièveté, identique au précédent)
+    st.markdown("<h2 style='text-align:center; color:#10b981;'>⚖️ Connexion LegalOS</h2>", unsafe_allow_html=True)
+    
+    # Centre le formulaire
+    _, col_center, _ = st.columns([1, 2, 1])
+    with col_center:
+        with st.form("login_form"):
+            email = st.text_input("Votre Email")
+            password = st.text_input("Votre Mot de passe", type="password")
+            submit = st.form_submit_button("Entrer dans le Cabinet (Entrée)")
+            
+            if submit:
+                res = login_user(email, password)
+                if res:
+                    st.session_state.auth = True
+                    st.session_state.user_name = res[0]
+                    st.session_state.is_premium = res[1]
+                    st.session_state.user_email = email
+                    st.rerun() # Relance pour afficher le cabinet
+                else:
+                    st.error("Email ou mot de passe incorrect.")
+    st.stop() # Arrête le script ici tant que l'utilisateur n'est pas loggé
+
+# --- 2. CABINET (SÉLECTION DES DOSSIERS) ---
+if st.session_state.page == "selection":
+    st.title(f"📂 Cabinet de {st.session_state.user_name}")
+    if st.button("➕ Créer un nouveau dossier"):
+        st.session_state.page = "cabinet"
+        st.rerun()
+    
+    st.divider()
+    dossiers = get_user_dossiers(st.session_state.user_email)
+    if dossiers:
+        for d in dossiers:
+            with st.expander(f"📁 {d[0]} - {d[1]}"):
+                if st.button(f"Ouvrir {d[0]}", key=d[0]):
+                    st.session_state.current_dossier = d[0]
+                    st.session_state.page = "cabinet"
+                    st.rerun()
+    else:
+        st.info("Aucun dossier trouvé. Commencez par en créer un.")
     st.stop()
 
+# --- 3. MODE AVOCAT (MÉTHODE FREEMAN PROGRESSIVE) ---
 with st.sidebar:
-    st.title("⚖️ LegalOS")
+    st.title("MÉTHODE FREEMAN")
+    if st.button("⬅️ Retour au Cabinet"):
+        st.session_state.page = "selection"
+        st.rerun()
+    
     steps = ["1. Qualification", "2. Objectif", "3. Base Légale", "4. Inventaire", "5. Risques", "6. Stratégie", "7. Rédaction"]
-    choice = st.radio("Progression du dossier :", steps)
+    choice = st.radio("Progression :", steps)
     idx = int(choice.split('.')[0])
+    
     if not st.session_state.is_premium and idx > 3:
-        st.warning("🔒 Premium requis")
-        st.link_button("S'abonner", STRIPE_LINK)
+        st.warning("🔒 Étape Premium")
+        st.link_button("🚀 Débloquer", STRIPE_LINK)
         st.stop()
 
-# --- LOGIQUE PROGRESSIVE ---
-st.title(choice)
+# --- INTERFACE DE TRAVAIL (2 COLONNES) ---
+st.header(f"Dossier : {st.session_state.get('current_dossier', 'Sans titre')} - {choice}")
 col_l, col_r = st.columns(2, gap="large")
 
 with col_l:
-    st.subheader("📝 Éléments du dossier")
-    with st.form("progress_form"):
-        nom_d = st.text_input("Dossier actuel", value="Affaire Freeman")
-        faits = st.text_area("Nouveaux faits ou précisions :", height=250)
+    st.subheader("📝 Action de l'Avocat")
+    with st.form("action_form"):
+        faits = st.text_area("Précisions pour cette étape :", height=300)
         
-        if st.form_submit_button("🔨 Faire progresser l'affaire"):
-            # On récupère tout ce qu'on sait déjà
-            faits_anciens, historique = get_full_history(st.session_state.user_email, nom_d)
+        if st.form_submit_button("🔨 Faire progresser l'analyse"):
+            _, historique = get_full_history(st.session_state.user_email, st.session_state.current_dossier)
             
-            # Instructions spécifiques pour simuler un avocat
-            instructions = {
-                1: "Analyse les faits et donne la qualification juridique exacte.",
-                2: f"Basé sur la qualification précédente ({historique}), quel est l'objectif judiciaire ?",
-                3: f"Cite les articles de loi précis pour soutenir l'objectif identifié.",
-                4: "Quelles preuves l'utilisateur doit-il fournir pour gagner ?",
-            }
+            # Kareem adapte son conseil selon l'étape et l'historique
+            prompt = f"Historique : {historique}\nÉtape : {choice}\nNouveaux faits : {faits}"
             
-            prompt_final = f"Historique du dossier : {historique}\nNouveaux éléments : {faits}\nMission : {instructions.get(idx)}"
-            
-            response = client.chat.completions.create(
+            resp = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "system", "content": "Tu es Kareem, un avocat rigoureux. Tu construis ton dossier étape par étape."},
-                          {"role": "user", "content": prompt_final}]
+                messages=[{"role": "system", "content": "Tu es Kareem, avocat expert en méthode Freeman. Sois précis et stratégique."},
+                          {"role": "user", "content": prompt}]
             )
             
-            res_ia = response.choices[0].message.content
-            save_step_progress(st.session_state.user_email, nom_d, faits, res_ia, idx)
-            st.session_state.last_res = res_ia
-            st.session_state.show_typewriter = True
+            st.session_state.last_res = resp.choices[0].message.content
+            save_step_progress(st.session_state.user_email, st.session_state.current_dossier, faits, st.session_state.last_res, idx)
             st.rerun()
 
 with col_r:
-    st.subheader("🎯 Stratégie Kareem")
-    st.metric("Solidité du dossier", f"{60 + idx*5}%")
+    st.subheader("🎯 Intelligence Kareem")
+    st.metric("Fiabilité Stratégique", f"{65 + idx*5}%")
     st.markdown('<div class="status-bar"><div class="status-fill"></div></div>', unsafe_allow_html=True)
     
     if 'last_res' in st.session_state:
-        if st.session_state.get('show_typewriter', False):
-            typewriter(st.session_state.last_res)
-            st.session_state.show_typewriter = False
-        else:
-            st.markdown(f'<div class="kareem-card"><p style="color:#10b981; font-weight:bold;">🤖 Kareem IA :</p>{st.session_state.last_res}</div>', unsafe_allow_html=True)
+        # Effet machine à écrire simplifié pour la stabilité
+        st.markdown(f'<div class="kareem-card"><p style="color:#10b981; font-weight:bold;">🤖 Kareem :</p>{st.session_state.last_res}</div>', unsafe_allow_html=True)
