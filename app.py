@@ -1,130 +1,132 @@
 import streamlit as st
-import pandas as pd
 import time
+import re
 import PyPDF2
-from database import init_db, login_user, add_user, upgrade_to_premium
+from database import init_db, login_user, add_user, upgrade_to_premium, send_welcome_email
 
 # --- INITIALISATION ---
 init_db()
 st.set_page_config(page_title="LegalOS - Kareem IA", layout="wide")
 
-# --- FONCTION TYPEWRITER (L'ÂME DE KAREEM) ---
-def typewriter(text, speed=0.01):
+# --- CERVEAU DE KAREEM (ANALYSE PERSONNALISÉE) ---
+def analyse_freeman(faits):
+    # Extraction de données précises
+    dates = re.findall(r'\d{2}/\d{2}/\d{4}', faits)
+    montants = re.findall(r'\d+[\s]*€', faits)
+    
+    # Détection de branche et conseil spécifique
+    f_low = faits.lower()
+    if any(w in f_low for w in ["salaire", "licenciement", "prud'hommes", "travail"]):
+        branche = "DROIT DU TRAVAIL"
+        conseil = "Attention : En matière de contestation de licenciement, le délai est souvent de 12 mois."
+    elif any(w in f_low for w in ["loyer", "bail", "expulsion", "appartement"]):
+        branche = "DROIT IMMOBILIER"
+        conseil = "Il est impératif de vérifier si une mise en demeure a été signifiée par acte d'huissier ou LRAR."
+    else:
+        branche = "DROIT CIVIL GÉNÉRAL"
+        conseil = "Nous devrons prouver le préjudice et le lien de causalité selon l'article 1240 du Code Civil."
+
+    msg = f"Analyse terminée pour votre dossier de {branche}. \n\n"
+    if dates: msg += f"📅 Dates clés détectées : {', '.join(dates)}. \n"
+    if montants: msg += f"💰 Enjeu financier repéré : {montants[0]}. \n\n"
+    msg += f"💡 **Conseil stratégique de Kareem :** {conseil} \n\nPassons à l'étape 2."
+    
+    return branche, msg
+
+# --- EFFET MACHINE À ÉCRIRE ---
+def typewriter(text):
     container = st.empty()
-    displayed_text = ""
+    displayed = ""
     for char in text:
-        displayed_text += char
-        container.markdown(f"""
-            <div class="kareem-box">
-                <p style="margin-bottom:0;">🤖 <b>Kareem :</b></p>
-                {displayed_text}▌
-            </div>
-            """, unsafe_allow_html=True)
-        time.sleep(speed)
-    container.markdown(f'<div class="kareem-box"><p style="margin-bottom:0;">🤖 <b>Kareem :</b></p>{displayed_text}</div>', unsafe_allow_html=True)
+        displayed += char
+        container.markdown(f'<div class="kareem-box">🤖 <b>Kareem :</b><br>{displayed}▌</div>', unsafe_allow_html=True)
+        time.sleep(0.01)
+    container.markdown(f'<div class="kareem-box">🤖 <b>Kareem :</b><br>{displayed}</div>', unsafe_allow_html=True)
 
-# --- LOGIQUE D'ANALYSE ---
-def classifier_procedure(faits):
-    if not faits: return "NON DÉFINI"
-    t = faits.lower()
-    if any(w in t for w in ["salaire", "travail", "licenciement", "patron", "prud'hommes"]): return "DROIT DU TRAVAIL"
-    if any(w in t for w in ["loyer", "bail", "expulsion", "propriétaire"]): return "DROIT IMMOBILIER"
-    return "DROIT CIVIL GÉNÉRAL"
-
-# --- DESIGN "LEGALOS GOLD" ---
+# --- DESIGN ---
 st.markdown("""
     <style>
     .stApp { background-color: #0f172a; color: #f8fafc; }
     [data-testid="stSidebar"] { background-color: #1e293b; border-right: 1px solid #334155; }
     .kareem-box { 
         background-color: #161e2e; padding: 20px; border-radius: 12px; 
-        border-left: 4px solid #10b981; font-family: 'Courier New', Courier, monospace;
-        color: #10b981; line-height: 1.6; border: 1px solid #1e293b;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        border-left: 4px solid #10b981; font-family: 'Courier New', monospace;
+        color: #10b981; border: 1px solid #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     .stMetric { background: #1e293b; padding: 15px; border-radius: 10px; border: 1px solid #334155; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MÉMOIRE DU DOSSIER (LIEN ENTRE ÉTAPES) ---
-if 'dossier' not in st.session_state:
-    st.session_state.dossier = {
-        "faits": "", "branche": None, "score": 0, "objectif": None, "pieces": 0
-    }
-
-# --- AUTHENTIFICATION ---
+# --- SESSION & AUTH ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'dossier' not in st.session_state: st.session_state.dossier = {"faits": "", "branche": None, "msg": "", "score": 0}
+
 if not st.session_state.logged_in:
     st.markdown('<p style="color:#10b981; font-size:2.5rem; font-weight:bold; text-align:center;">⚖️ LegalOS Access</p>', unsafe_allow_html=True)
     t1, t2 = st.tabs(["Connexion", "Inscription"])
     with t1:
-        e = st.text_input("Email", key="l_e")
-        p = st.text_input("Mot de passe", type="password", key="l_p")
+        el = st.text_input("Email", key="l_e")
+        pl = st.text_input("Mot de passe", type="password", key="l_p")
         if st.button("Se connecter"):
-            res = login_user(e, p)
+            res = login_user(el, pl)
             if res:
                 st.session_state.logged_in, st.session_state.user_name, st.session_state.is_premium = True, res[0], res[2]
                 st.rerun()
-    with t2: st.info("Espace de création de compte.")
+    with t2:
+        nn = st.text_input("Nom Complet")
+        ne = st.text_input("Email")
+        np = st.text_input("Mot de passe", type="password")
+        if st.button("Créer mon compte"):
+            if add_user(ne, np, nn):
+                send_welcome_email(ne, nn) # Envoi du mail réel
+                st.success("Compte créé ! Un mail de bienvenue vous a été envoyé.")
     st.stop()
 
-# --- SIDEBAR & NAVIGATION ---
+# --- NAVIGATION ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.user_name}")
-    st.divider()
     steps = ["1. Qualification", "2. Objectif", "3. Base Légale", "4. Inventaire", "5. Risques", "6. Amiable", "7. Stratégie", "8. Rédaction", "9. Audience", "10. Jugement", "11. Recours"]
-    selected_step = st.radio("MÉTHODE FREEMAN", steps)
-    current_idx = int(selected_step.split('.')[0])
-    st.divider()
-    if st.button("Se déconnecter"):
+    choice = st.radio("MÉTHODE FREEMAN", steps)
+    idx = int(choice.split('.')[0])
+    if st.button("Déconnexion"):
         st.session_state.logged_in = False
         st.rerun()
 
-# --- INTERFACE DE TRAVAIL ---
-st.markdown(f'<p style="color:#10b981; font-size:1.8rem; font-weight:bold;">{selected_step}</p>', unsafe_allow_html=True)
-col_left, col_right = st.columns([1, 1], gap="large")
+# --- CABINET DE TRAVAIL ---
+st.markdown(f'<p style="color:#10b981; font-size:1.8rem; font-weight:bold;">{choice}</p>', unsafe_allow_html=True)
+col_l, col_r = st.columns([1, 1], gap="large")
 
-with col_left:
-    if current_idx == 1:
+with col_l:
+    if idx == 1:
         st.subheader("📄 Qualification du Dossier")
-        st.radio("État :", ["Nouveau dossier", "En cours", "À finaliser"], horizontal=True)
-        file = st.file_uploader("Ajouter une preuve (PDF)", type="pdf")
-        txt = st.text_area("Récit des faits :", height=250, value=st.session_state.dossier["faits"])
-        
-        if st.button("🚀 LANCER L'ANALYSE KAREEM"):
+        txt = st.text_area("Décrivez les faits (incluez dates et montants) :", height=300, value=st.session_state.dossier["faits"])
+        if st.button("🚀 ANALYSE EXPERTE KAREEM"):
             st.session_state.dossier["faits"] = txt
-            st.session_state.dossier["branche"] = classifier_procedure(txt)
-            st.session_state.dossier["score"] = 45 if not file else 85
-            st.session_state.trigger_msg = f"Analyse terminée. Ce dossier relève du **{st.session_state.dossier['branche']}**. \n\nMon diagnostic montre un potentiel de succès de {st.session_state.dossier['score']}%. Pour avancer, nous devons maintenant définir votre **Objectif** à l'étape 2."
+            b, m = analyse_freeman(txt)
+            st.session_state.dossier["branche"] = b
+            st.session_state.dossier["msg"] = m
+            st.session_state.dossier["score"] = 65 if len(txt) > 200 else 40
             st.rerun()
 
-    elif current_idx == 2:
-        st.subheader("🎯 Définition de l'Objectif")
-        if not st.session_state.dossier["branche"]:
-            st.warning("⚠️ Veuillez qualifier le dossier à l'étape 1 d'abord.")
+    elif idx == 2:
+        st.subheader("🎯 Objectif Juridique")
+        if not st.session_state.dossier["branche"]: st.warning("Passez d'abord par l'étape 1.")
         else:
-            objs = ["Rappel de salaires", "Indemnités de licenciement", "Réintégration"] if st.session_state.dossier["branche"] == "DROIT DU TRAVAIL" else ["Dommages et intérêts", "Exécution forcée"]
-            choix = st.selectbox("Choisissez votre objectif principal :", objs)
-            if st.button("🎯 Fixer l'Objectif"):
-                st.session_state.dossier["objectif"] = choix
-                st.session_state.trigger_msg = f"Objectif enregistré : **{choix}**. \n\nC'est un choix cohérent avec un dossier de {st.session_state.dossier['branche']}. Je vais maintenant préparer la **Base Légale** (Étape 3) pour soutenir cette demande."
+            obj = st.selectbox("Sélectionnez l'objectif :", ["Rappel de salaire", "Indemnités", "Dommages & Intérêts"])
+            if st.button("Valider"):
+                st.session_state.dossier["msg"] = f"Objectif **{obj}** validé. Je prépare les articles de loi."
                 st.rerun()
 
-with col_right:
-    st.subheader("🤖 Analyse de l'IA")
-    
-    # Affichage des métriques si l'analyse est faite
+with col_r:
+    st.subheader("🤖 Analyse de Kareem")
     if st.session_state.dossier["branche"]:
         c1, c2 = st.columns(2)
         c1.metric("Branche", st.session_state.dossier["branche"])
-        c2.metric("Chances", f"{st.session_state.dossier['score']}%")
+        c2.metric("Chances de succès", f"{st.session_state.dossier['score']}%")
         st.progress(st.session_state.dossier["score"] / 100)
 
-    # Zone de dialogue Kareem
-    if "trigger_msg" in st.session_state:
-        typewriter(st.session_state.trigger_msg)
-        del st.session_state.trigger_msg
+    if st.session_state.dossier["msg"]:
+        typewriter(st.session_state.dossier["msg"])
+        st.session_state.dossier["msg"] = "" # Pour ne pas relancer l'animation à chaque clic
     elif st.session_state.dossier["branche"]:
-        st.markdown(f'<div class="kareem-box">🤖 <b>Kareem :</b><br>Dossier prêt pour l\'étape {current_idx}. J\'attends vos instructions à gauche.</div>', unsafe_allow_html=True)
-    else:
-        st.info("Kareem attend l'analyse des faits pour commencer le guidage...")
+        st.markdown(f'<div class="kareem-box">🤖 <b>Kareem :</b><br>J\'attends vos prochaines instructions pour l\'étape {idx}.</div>', unsafe_allow_html=True)
