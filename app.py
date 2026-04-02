@@ -1,44 +1,32 @@
 import streamlit as st
 import time
-import re
-from database import init_db, login_user, add_user, send_welcome_email
+from database import init_db, login_user, add_user, save_dossier, get_user_dossiers
 
 init_db()
 st.set_page_config(page_title="LegalOS - Kareem IA", layout="wide")
 
-# --- DESIGN & CSS ---
+# --- STYLE & LOGO ---
 st.markdown("""
     <style>
     .stApp { background-color: #0f172a; color: #f8fafc; }
     .kareem-box { 
         background-color: #161e2e; padding: 20px; border-radius: 12px; 
         border-left: 4px solid #10b981; font-family: 'Courier New', monospace;
-        color: #10b981; border: 1px solid #1e293b; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        color: #10b981; border: 1px solid #1e293b;
     }
-    .folder-btn { margin-bottom: 10px; }
+    .logo-text { font-size: 3rem; font-weight: bold; color: #10b981; text-align: center; margin-bottom: 0px; }
+    .sub-logo { text-align: center; color: #64748b; margin-bottom: 30px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTEUR JURIDIQUE MULTI-CODES ---
-def analyse_universelle_kareem(faits):
+# --- MOTEUR JURIDIQUE ---
+def analyse_universelle(faits):
     f = faits.lower()
-    # Droit Pénal
-    if any(w in f for w in ["vol", "agression", "plainte", "police", "crime", "escroquerie"]):
-        return "DROIT PÉNAL", "Code Pénal", "Article 121-1", "Chaque infraction nécessite un élément matériel et un élément moral. Nous devons vérifier la qualification pénale des faits."
-    # Droit de la Consommation
-    elif any(w in f for w in ["achat", "remboursement", "garantie", "site marchand", "rétractation"]):
-        return "DROIT DE LA CONSOMMATION", "Code de la Consommation", "Article L221-18", "Le consommateur dispose d'un droit de rétractation de 14 jours. J'analyse si le délai est respecté."
-    # Droit du Travail
-    elif any(w in f for w in ["salaire", "licenciement", "patron", "cdi", "cdd"]):
-        return "DROIT DU TRAVAIL", "Code du Travail", "Article L1232-1", "Tout licenciement doit être fondé sur une cause réelle et sérieuse. Vérifions la procédure."
-    # Droit Commercial
-    elif any(w in f for w in ["facture", "fournisseur", "société", "concurrence"]):
-        return "DROIT COMMERCIAL", "Code de Commerce", "Article L441-10", "Les pénalités de retard sont exigibles sans qu'un rappel soit nécessaire."
-    # Par défaut : Droit Civil
-    else:
-        return "DROIT CIVIL", "Code Civil", "Article 1240", "Tout fait quelconque de l'homme qui cause à autrui un dommage oblige celui par la faute duquel il est arrivé à le réparer."
+    if any(w in f for w in ["vol", "agression", "plainte", "police"]): return "DROIT PÉNAL", "Code Pénal", "Art. 121-1"
+    if any(w in f for w in ["salaire", "licenciement", "patron", "travail"]): return "DROIT DU TRAVAIL", "Code du Travail", "Art. L1232-1"
+    if any(w in f for w in ["loyer", "bail", "propriétaire", "appartement"]): return "DROIT IMMOBILIER", "Loi du 6 juillet 1989", "Art. 7"
+    return "DROIT CIVIL", "Code Civil", "Art. 1240"
 
-# --- TYPEWRITER EFFECT ---
 def typewriter(text):
     container = st.empty()
     displayed = ""
@@ -48,65 +36,80 @@ def typewriter(text):
         time.sleep(0.01)
     container.markdown(f'<div class="kareem-box">🤖 <b>Kareem :</b><br>{displayed}</div>', unsafe_allow_html=True)
 
-# --- LOGIQUE DE NAVIGATION ---
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'page' not in st.session_state: st.session_state.page = "auth"
+# --- GESTION SESSION (Pas de reconnexion au refresh) ---
+if 'auth' not in st.session_state: st.session_state.auth = False
+if 'page' not in st.session_state: st.session_state.page = "selection"
 
-# --- 1. AUTHENTIFICATION ---
-if not st.session_state.logged_in:
+# 1. AUTHENTIFICATION
+if not st.session_state.auth:
+    st.markdown('<p class="logo-text">⚖️ LegalOS</p><p class="sub-logo">Intelligence Artificielle Juridique</p>', unsafe_allow_html=True)
     t1, t2 = st.tabs(["Connexion", "Inscription"])
-    with t2:
-        with st.form("reg"):
-            n, e, p = st.text_input("Nom"), st.text_input("Email"), st.text_input("Pass", type="password")
-            if st.form_submit_button("S'inscrire"):
-                if add_user(e, p, n): st.success("Compte créé !")
     with t1:
-        el, pl = st.text_input("Email", key="l_e"), st.text_input("Pass", type="password", key="l_p")
-        if st.button("Se connecter"):
-            res = login_user(el, pl)
-            if res:
-                st.session_state.logged_in, st.session_state.user_name = True, res[0]
-                st.session_state.page = "selection"
-                st.rerun()
+        with st.form("login"):
+            e = st.text_input("Email")
+            p = st.text_input("Mot de passe", type="password")
+            if st.form_submit_button("Entrer"): # Touche Entrée fonctionne ici
+                res = login_user(e, p)
+                if res:
+                    st.session_state.auth, st.session_state.user_name, st.session_state.user_email = True, res[0], e
+                    st.rerun()
+                else: st.error("Identifiants incorrects.")
+    with t2:
+        with st.form("signup"):
+            nn, ne, np = st.text_input("Nom"), st.text_input("Email"), st.text_input("Pass", type="password")
+            if st.form_submit_button("S'inscrire"):
+                if add_user(ne, np, nn): st.success("Compte créé !")
     st.stop()
 
-# --- 2. SÉLECTION DES DOSSIERS ---
+# 2. SÉLECTION / RETROUVER SES TRAVAUX
 if st.session_state.page == "selection":
-    st.title(f"📂 Dossiers de {st.session_state.user_name}")
+    st.markdown(f"## 📂 Cabinet de {st.session_state.user_name}")
     c1, c2, c3, c4 = st.columns(4)
     with c1: 
         if st.button("➕ Nouveau dossier", use_container_width=True):
             st.session_state.page = "cabinet"; st.rerun()
-    with c2: st.button("🔄 En cours", use_container_width=True)
-    with c3: st.button("⏳ À finaliser", use_container_width=True)
-    with c4: st.button("✅ Terminés", use_container_width=True)
+    
+    st.divider()
+    st.subheader("Vos travaux récents")
+    dossiers = get_user_dossiers(st.session_state.user_email)
+    if dossiers:
+        for d in dossiers:
+            with st.expander(f"📁 {d[0]} - {d[1]} ({d[2]})"):
+                st.write(f"**Faits :** {d[3]}")
+                if st.button(f"Ouvrir {d[0]}", key=d[0]):
+                    st.session_state.page = "cabinet"
+                    st.session_state.current_dossier = d
+                    st.rerun()
+    else: st.info("Aucun dossier enregistré.")
     st.stop()
 
-# --- 3. CABINET (LES 11 ÉTAPES) ---
+# 3. CABINET (11 ÉTAPES)
 with st.sidebar:
-    st.markdown(f"### 👤 {st.session_state.user_name}")
-    if st.button("⬅️ Retour aux dossiers"):
+    st.markdown("### ⚖️ LegalOS")
+    if st.button("⬅️ Retour au Cabinet"):
         st.session_state.page = "selection"; st.rerun()
     st.divider()
-    steps = ["1. Qualification", "2. Objectif", "3. Base Légale", "4. Inventaire", "5. Risques"]
+    steps = ["1. Qualification", "2. Objectif", "3. Base Légale", "4. Inventaire", "5. Risques", "6. Amiable", "7. Stratégie", "8. Rédaction", "9. Audience", "10. Jugement", "11. Recours"]
     choice = st.radio("MÉTHODE FREEMAN", steps)
     idx = int(choice.split('.')[0])
 
+st.markdown(f'<p style="color:#10b981; font-size:1.8rem; font-weight:bold;">{choice}</p>', unsafe_allow_html=True)
 col_l, col_r = st.columns([1, 1], gap="large")
 
 with col_l:
-    st.subheader(f"📍 {choice}")
     if idx == 1:
-        faits = st.text_area("Exposez les faits précisément :", height=300)
-        if st.button("🚀 ANALYSER AVEC KAREEM"):
-            br, code, art, conseil = analyse_universelle_kareem(faits)
-            st.session_state.last_analysis = {"br": br, "code": code, "art": art, "msg": conseil}
-            st.rerun()
+        with st.form("analyse_form"): # Support touche Entrée
+            nom_d = st.text_input("Nom du dossier (ex: Litige Martin)")
+            faits = st.text_area("Exposez les faits :", height=250)
+            sub = st.form_submit_button("🚀 LANCER L'ANALYSE")
+            if sub:
+                br, code, art = analyse_universelle(faits)
+                save_dossier(st.session_state.user_email, nom_d, faits, br)
+                st.session_state.res = {"br": br, "art": art, "msg": f"Analyse Freeman terminée. Domaine : {br}. Référence : {art}."}
+                st.rerun()
 
 with col_r:
-    st.subheader("🤖 Expertise de Kareem")
-    if 'last_analysis' in st.session_state:
-        ana = st.session_state.last_analysis
-        st.metric("Domaine", ana['br'])
-        st.metric("Source", ana['code'])
-        typewriter(f"Analyse terminée. \n\nRéférence : **{ana['art']}**. \n\n{ana['msg']}")
+    st.subheader("🤖 Kareem IA")
+    if 'res' in st.session_state:
+        st.metric("Branche", st.session_state.res['br'])
+        typewriter(st.session_state.res['msg'])
