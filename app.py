@@ -1,39 +1,44 @@
 import streamlit as st
 import time
 import re
-import PyPDF2
-from database import init_db, login_user, add_user, upgrade_to_premium, send_welcome_email
+from database import init_db, login_user, add_user, send_welcome_email
 
-# --- INITIALISATION ---
 init_db()
 st.set_page_config(page_title="LegalOS - Kareem IA", layout="wide")
 
-# --- CERVEAU DE KAREEM (ANALYSE PERSONNALISÉE) ---
-def analyse_freeman(faits):
-    # Extraction de données précises
-    dates = re.findall(r'\d{2}/\d{2}/\d{4}', faits)
-    montants = re.findall(r'\d+[\s]*€', faits)
-    
-    # Détection de branche et conseil spécifique
-    f_low = faits.lower()
-    if any(w in f_low for w in ["salaire", "licenciement", "prud'hommes", "travail"]):
-        branche = "DROIT DU TRAVAIL"
-        conseil = "Attention : En matière de contestation de licenciement, le délai est souvent de 12 mois."
-    elif any(w in f_low for w in ["loyer", "bail", "expulsion", "appartement"]):
-        branche = "DROIT IMMOBILIER"
-        conseil = "Il est impératif de vérifier si une mise en demeure a été signifiée par acte d'huissier ou LRAR."
+# --- DESIGN & CSS ---
+st.markdown("""
+    <style>
+    .stApp { background-color: #0f172a; color: #f8fafc; }
+    .kareem-box { 
+        background-color: #161e2e; padding: 20px; border-radius: 12px; 
+        border-left: 4px solid #10b981; font-family: 'Courier New', monospace;
+        color: #10b981; border: 1px solid #1e293b; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    }
+    .folder-btn { margin-bottom: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- MOTEUR JURIDIQUE MULTI-CODES ---
+def analyse_universelle_kareem(faits):
+    f = faits.lower()
+    # Droit Pénal
+    if any(w in f for w in ["vol", "agression", "plainte", "police", "crime", "escroquerie"]):
+        return "DROIT PÉNAL", "Code Pénal", "Article 121-1", "Chaque infraction nécessite un élément matériel et un élément moral. Nous devons vérifier la qualification pénale des faits."
+    # Droit de la Consommation
+    elif any(w in f for w in ["achat", "remboursement", "garantie", "site marchand", "rétractation"]):
+        return "DROIT DE LA CONSOMMATION", "Code de la Consommation", "Article L221-18", "Le consommateur dispose d'un droit de rétractation de 14 jours. J'analyse si le délai est respecté."
+    # Droit du Travail
+    elif any(w in f for w in ["salaire", "licenciement", "patron", "cdi", "cdd"]):
+        return "DROIT DU TRAVAIL", "Code du Travail", "Article L1232-1", "Tout licenciement doit être fondé sur une cause réelle et sérieuse. Vérifions la procédure."
+    # Droit Commercial
+    elif any(w in f for w in ["facture", "fournisseur", "société", "concurrence"]):
+        return "DROIT COMMERCIAL", "Code de Commerce", "Article L441-10", "Les pénalités de retard sont exigibles sans qu'un rappel soit nécessaire."
+    # Par défaut : Droit Civil
     else:
-        branche = "DROIT CIVIL GÉNÉRAL"
-        conseil = "Nous devrons prouver le préjudice et le lien de causalité selon l'article 1240 du Code Civil."
+        return "DROIT CIVIL", "Code Civil", "Article 1240", "Tout fait quelconque de l'homme qui cause à autrui un dommage oblige celui par la faute duquel il est arrivé à le réparer."
 
-    msg = f"Analyse terminée pour votre dossier de {branche}. \n\n"
-    if dates: msg += f"📅 Dates clés détectées : {', '.join(dates)}. \n"
-    if montants: msg += f"💰 Enjeu financier repéré : {montants[0]}. \n\n"
-    msg += f"💡 **Conseil stratégique de Kareem :** {conseil} \n\nPassons à l'étape 2."
-    
-    return branche, msg
-
-# --- EFFET MACHINE À ÉCRIRE ---
+# --- TYPEWRITER EFFECT ---
 def typewriter(text):
     container = st.empty()
     displayed = ""
@@ -43,90 +48,65 @@ def typewriter(text):
         time.sleep(0.01)
     container.markdown(f'<div class="kareem-box">🤖 <b>Kareem :</b><br>{displayed}</div>', unsafe_allow_html=True)
 
-# --- DESIGN ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #0f172a; color: #f8fafc; }
-    [data-testid="stSidebar"] { background-color: #1e293b; border-right: 1px solid #334155; }
-    .kareem-box { 
-        background-color: #161e2e; padding: 20px; border-radius: 12px; 
-        border-left: 4px solid #10b981; font-family: 'Courier New', monospace;
-        color: #10b981; border: 1px solid #1e293b; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    }
-    .stMetric { background: #1e293b; padding: 15px; border-radius: 10px; border: 1px solid #334155; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- SESSION & AUTH ---
+# --- LOGIQUE DE NAVIGATION ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'dossier' not in st.session_state: st.session_state.dossier = {"faits": "", "branche": None, "msg": "", "score": 0}
+if 'page' not in st.session_state: st.session_state.page = "auth"
 
+# --- 1. AUTHENTIFICATION ---
 if not st.session_state.logged_in:
-    st.markdown('<p style="color:#10b981; font-size:2.5rem; font-weight:bold; text-align:center;">⚖️ LegalOS Access</p>', unsafe_allow_html=True)
     t1, t2 = st.tabs(["Connexion", "Inscription"])
+    with t2:
+        with st.form("reg"):
+            n, e, p = st.text_input("Nom"), st.text_input("Email"), st.text_input("Pass", type="password")
+            if st.form_submit_button("S'inscrire"):
+                if add_user(e, p, n): st.success("Compte créé !")
     with t1:
-        el = st.text_input("Email", key="l_e")
-        pl = st.text_input("Mot de passe", type="password", key="l_p")
+        el, pl = st.text_input("Email", key="l_e"), st.text_input("Pass", type="password", key="l_p")
         if st.button("Se connecter"):
             res = login_user(el, pl)
             if res:
-                st.session_state.logged_in, st.session_state.user_name, st.session_state.is_premium = True, res[0], res[2]
+                st.session_state.logged_in, st.session_state.user_name = True, res[0]
+                st.session_state.page = "selection"
                 st.rerun()
-    with t2:
-        nn = st.text_input("Nom Complet")
-        ne = st.text_input("Email")
-        np = st.text_input("Mot de passe", type="password")
-        if st.button("Créer mon compte"):
-            if add_user(ne, np, nn):
-                send_welcome_email(ne, nn) # Envoi du mail réel
-                st.success("Compte créé ! Un mail de bienvenue vous a été envoyé.")
     st.stop()
 
-# --- NAVIGATION ---
+# --- 2. SÉLECTION DES DOSSIERS ---
+if st.session_state.page == "selection":
+    st.title(f"📂 Dossiers de {st.session_state.user_name}")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: 
+        if st.button("➕ Nouveau dossier", use_container_width=True):
+            st.session_state.page = "cabinet"; st.rerun()
+    with c2: st.button("🔄 En cours", use_container_width=True)
+    with c3: st.button("⏳ À finaliser", use_container_width=True)
+    with c4: st.button("✅ Terminés", use_container_width=True)
+    st.stop()
+
+# --- 3. CABINET (LES 11 ÉTAPES) ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.user_name}")
-    steps = ["1. Qualification", "2. Objectif", "3. Base Légale", "4. Inventaire", "5. Risques", "6. Amiable", "7. Stratégie", "8. Rédaction", "9. Audience", "10. Jugement", "11. Recours"]
+    if st.button("⬅️ Retour aux dossiers"):
+        st.session_state.page = "selection"; st.rerun()
+    st.divider()
+    steps = ["1. Qualification", "2. Objectif", "3. Base Légale", "4. Inventaire", "5. Risques"]
     choice = st.radio("MÉTHODE FREEMAN", steps)
     idx = int(choice.split('.')[0])
-    if st.button("Déconnexion"):
-        st.session_state.logged_in = False
-        st.rerun()
 
-# --- CABINET DE TRAVAIL ---
-st.markdown(f'<p style="color:#10b981; font-size:1.8rem; font-weight:bold;">{choice}</p>', unsafe_allow_html=True)
 col_l, col_r = st.columns([1, 1], gap="large")
 
 with col_l:
+    st.subheader(f"📍 {choice}")
     if idx == 1:
-        st.subheader("📄 Qualification du Dossier")
-        txt = st.text_area("Décrivez les faits (incluez dates et montants) :", height=300, value=st.session_state.dossier["faits"])
-        if st.button("🚀 ANALYSE EXPERTE KAREEM"):
-            st.session_state.dossier["faits"] = txt
-            b, m = analyse_freeman(txt)
-            st.session_state.dossier["branche"] = b
-            st.session_state.dossier["msg"] = m
-            st.session_state.dossier["score"] = 65 if len(txt) > 200 else 40
+        faits = st.text_area("Exposez les faits précisément :", height=300)
+        if st.button("🚀 ANALYSER AVEC KAREEM"):
+            br, code, art, conseil = analyse_universelle_kareem(faits)
+            st.session_state.last_analysis = {"br": br, "code": code, "art": art, "msg": conseil}
             st.rerun()
 
-    elif idx == 2:
-        st.subheader("🎯 Objectif Juridique")
-        if not st.session_state.dossier["branche"]: st.warning("Passez d'abord par l'étape 1.")
-        else:
-            obj = st.selectbox("Sélectionnez l'objectif :", ["Rappel de salaire", "Indemnités", "Dommages & Intérêts"])
-            if st.button("Valider"):
-                st.session_state.dossier["msg"] = f"Objectif **{obj}** validé. Je prépare les articles de loi."
-                st.rerun()
-
 with col_r:
-    st.subheader("🤖 Analyse de Kareem")
-    if st.session_state.dossier["branche"]:
-        c1, c2 = st.columns(2)
-        c1.metric("Branche", st.session_state.dossier["branche"])
-        c2.metric("Chances de succès", f"{st.session_state.dossier['score']}%")
-        st.progress(st.session_state.dossier["score"] / 100)
-
-    if st.session_state.dossier["msg"]:
-        typewriter(st.session_state.dossier["msg"])
-        st.session_state.dossier["msg"] = "" # Pour ne pas relancer l'animation à chaque clic
-    elif st.session_state.dossier["branche"]:
-        st.markdown(f'<div class="kareem-box">🤖 <b>Kareem :</b><br>J\'attends vos prochaines instructions pour l\'étape {idx}.</div>', unsafe_allow_html=True)
+    st.subheader("🤖 Expertise de Kareem")
+    if 'last_analysis' in st.session_state:
+        ana = st.session_state.last_analysis
+        st.metric("Domaine", ana['br'])
+        st.metric("Source", ana['code'])
+        typewriter(f"Analyse terminée. \n\nRéférence : **{ana['art']}**. \n\n{ana['msg']}")
