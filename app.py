@@ -3,142 +3,115 @@ import time
 from groq import Groq
 from database import *
 
-# --- INITIALISATION ---
+# --- SETUP ---
 init_db()
-client = Groq(api_key="TA_CLE_GROQ") # Remplace par ta clé
+GROQ_KEY = "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"
+client = Groq(api_key=GROQ_KEY)
 
-st.set_page_config(page_title="LegalOS - Méthode Freeman", layout="wide")
+st.set_page_config(page_title="LegalOS - Freeman Method", layout="wide")
 
-# --- STYLE ---
+# --- UI STYLE ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0f172a; color: #f8fafc; }
-    .kareem-card { background-color: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
-    .slogan { color: #94a3b8; font-style: italic; text-align: center; margin-bottom: 30px; font-size: 1.2em; }
+    .stApp { background-color: #0b0f19; color: #e2e8f0; }
+    .kareem-box { background: #161b22; border-left: 4px solid #10b981; padding: 20px; border-radius: 8px; margin: 10px 0; }
+    .stButton>button { width: 100%; border-radius: 5px; background: #10b981; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- PERSISTANCE SESSION ---
-# On utilise les query_params pour "survivre" au refresh
-if 'auth' not in st.session_state:
-    st.session_state.auth = False
+if 'auth' not in st.session_state: st.session_state.auth = False
 
-def typewriter(text):
-    container = st.empty()
-    full_text = ""
-    for char in text:
-        full_text += char
-        container.markdown(f'<div class="kareem-card"><b style="color:#10b981;">🤖 Kareem IA :</b><br>{full_text}▌</div>', unsafe_allow_html=True)
-        time.sleep(0.01)
-    container.markdown(f'<div class="kareem-card"><b style="color:#10b981;">🤖 Kareem IA :</b><br>{text}</div>', unsafe_allow_html=True)
-
-# --- PAGE D'ACCUEIL / LOGIN ---
+# --- AUTH ---
 if not st.session_state.auth:
-    st.markdown("<h1 style='text-align:center;'>⚖️ LegalOS</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='slogan'>L'intelligence juridique au service de la Méthode Freeman.</p>", unsafe_allow_html=True)
-    
-    t1, t2, t3 = st.tabs(["Connexion", "Inscription", "Clé à usage unique"])
+    st.title("⚖️ LegalOS")
+    t1, t2 = st.tabs(["Connexion", "Inscription"])
     with t1:
-        with st.form("login"):
-            e = st.text_input("Email")
-            p = st.text_input("Mot de passe", type="password")
-            if st.form_submit_button("Entrer dans le cabinet"):
-                res = login_user(e, p)
-                if res:
-                    st.session_state.auth = True
-                    st.session_state.user_name = res[0]
-                    st.session_state.user_email = e
-                    st.rerun()
+        e = st.text_input("Email")
+        p = st.text_input("Pass", type="password")
+        if st.button("Se connecter"):
+            res = login_user(e, p)
+            if res:
+                st.session_state.auth, st.session_state.user_name, st.session_state.user_email = True, res[0], e
+                st.rerun()
     with t2:
-        with st.form("reg"):
-            n, e, p = st.text_input("Nom"), st.text_input("Email"), st.text_input("Pass", type="password")
-            if st.form_submit_button("Créer compte"):
-                if register_user(e, p, n): st.success("Ok ! Connectez-vous.")
-    with t3:
-        st.text_input("Clé unique")
-        st.button("Activer")
+        n, em, pa = st.text_input("Nom"), st.text_input("Email "), st.text_input("Mdp", type="password")
+        if st.button("S'inscrire"):
+            if register_user(em, pa, n): st.success("Compte OK")
     st.stop()
 
-# --- CABINET DES DOSSIERS ---
+# --- NAVIGATION ---
 if 'page' not in st.session_state: st.session_state.page = "cabinet"
 
 if st.session_state.page == "cabinet":
-    st.title(f"📂 Cabinet de {st.session_state.user_name}")
-    if st.button("➕ Nouveau Dossier Freeman"):
+    st.title(f"📂 Cabinet Freeman - {st.session_state.user_name}")
+    if st.button("➕ NOUVELLE AFFAIRE"):
         st.session_state.current_dossier = f"Affaire_{int(time.time())}"
-        st.session_state.page = "travail"
-        st.rerun()
+        st.session_state.page = "travail"; st.rerun()
     
-    st.divider()
-    dossiers = get_user_dossiers(st.session_state.user_email)
-    for i, d_nom in enumerate(dossiers):
-        # Utilisation d'un ID unique pour éviter DuplicateElementId
-        if st.button(f"📁 {d_nom}", key=f"dossier_{i}_{d_nom}"):
-            st.session_state.current_dossier = d_nom
-            st.session_state.page = "travail"
-            st.rerun()
-    
-    if st.sidebar.button("🚪 Déconnexion"):
-        st.session_state.auth = False
-        st.rerun()
+    for i, d in enumerate(get_user_dossiers(st.session_state.user_email)):
+        if st.button(f"📁 {d}", key=f"d_{i}"):
+            st.session_state.current_dossier = d
+            st.session_state.page = "travail"; st.rerun()
     st.stop()
 
-# --- ESPACE DE TRAVAIL : MÉTHODE FREEMAN ---
+# --- WORKSPACE ---
 with st.sidebar:
-    st.title("MÉTHODE FREEMAN")
-    if st.button("⬅️ Retour au Cabinet"):
-        st.session_state.page = "cabinet"
-        st.rerun()
-    
+    st.header("MÉTHODE FREEMAN")
+    if st.button("⬅️ Cabinet"): st.session_state.page = "cabinet"; st.rerun()
     steps = [
-        "1. Qualification", "2. Objectif", "3. Base Légale", "4. Inventaire",
-        "5. Risques", "6. Amiable", "7. Stratégie", "8. Rédaction",
-        "9. Audience", "10. Jugement", "11. Recours"
+        "1. Qualification (Auto)", "2. Objectif (Auto)", "3. Base Légale (Auto)",
+        "4. Inventaire & Docs", "5. Analyse des Risques", "6. Procédure Amiable",
+        "7. Stratégie (Avocat du Diable)", "8. Rédaction & Modèles", 
+        "9. Simulation Audience", "10. Analyse Jugement", "11. Recours"
     ]
-    choice = st.radio("Séquence :", steps)
-    idx = int(choice.split('.')[0])
+    choice = st.radio("Étapes :", steps)
+    idx = steps.index(choice) + 1
 
-st.header(f"Dossier : {st.session_state.current_dossier}")
+st.title(f"📌 {choice}")
+faits, analyse = get_step_specific_data(st.session_state.user_email, st.session_state.current_dossier, idx)
 
-# Charger uniquement les données de CETTE étape
-faits_etape, analyse_etape = get_step_specific_data(st.session_state.user_email, st.session_state.current_dossier, idx)
+col1, col2 = st.columns(2)
 
-c1, c2 = st.columns(2, gap="large")
+with col1:
+    # Cas spécial : Importation à l'étape 4
+    if idx == 4:
+        uploaded_file = st.file_uploader("Importer des pièces (PDF, TXT)", type=["pdf", "txt"])
+        if uploaded_file: st.info(f"Document {uploaded_file.name} prêt pour analyse.")
+    
+    input_text = st.text_area("Saisissez vos notes ou éléments bruts :", value=faits, height=400)
+    
+    if st.button("⚖️ EXÉCUTER PAR KAREEM"):
+        full_ctx = get_full_context(st.session_state.user_email, st.session_state.current_dossier)
+        
+        # LOGIQUE SPECIFIQUE PAR ETAPE
+        prompts = {
+            1: "Détermine seul la qualification juridique exacte de cette affaire.",
+            2: "Détermine les objectifs stratégiques prioritaires pour l'utilisateur.",
+            3: "Identifie les textes de loi et la base légale applicable.",
+            5: "Identifie tous les risques (financiers, réputation, perte du procès).",
+            6: "Rédige une proposition de protocole d'accord amiable.",
+            7: "Joue l'AVOCAT DU DIABLE. Anticipe les attaques de l'adversaire et casse nos arguments.",
+            8: "Génère un modèle d'acte juridique complet prêt à l'emploi.",
+            9: "Simule l'audience. Pose-moi les questions pièges que le juge va poser.",
+            10: "Analyse le jugement rendu et explique les points de victoire ou défaite.",
+            11: "Propose une solution de recours ou d'appel solide."
+        }
+        
+        mission = prompts.get(idx, "Analyse les données fournies.")
+        final_prompt = f"METHODE FREEMAN\nCONTEXTE: {full_ctx}\nMISSION: {mission}\nDONNEES ACTUELLES: {input_text}"
+        
+        resp = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": final_prompt}])
+        res_text = resp.choices[0].message.content
+        save_step_progress(st.session_state.user_email, st.session_state.current_dossier, input_text, res_text, idx)
+        st.session_state.last_ia = res_text
+        st.rerun()
 
-with c1:
-    st.subheader(f"📝 Saisie : {choice}")
-    with st.form(f"form_freeman_{idx}"):
-        faits_in = st.text_area("Données de l'étape :", value=faits_etape, height=350)
-        if st.form_submit_button("LANCER L'IA KAREEM"):
-            # Kareem prend les choses en main : il reçoit TOUT le passé pour diriger le présent
-            full_ctx = get_full_dossier_context(st.session_state.user_email, st.session_state.current_dossier)
-            
-            prompt = f"""Tu es Kareem, l'avocat en chef. Nous appliquons la MÉTHODE FREEMAN.
-            HISTORIQUE DU DOSSIER : {full_ctx}
-            ÉTAPE ACTUELLE : {choice}
-            INPUT UTILISATEUR : {faits_in}
-            
-            MISSION : Ne sois pas un assistant, sois un leader. Analyse les faits, critique si nécessaire, 
-            et donne l'instruction directe sur ce qu'il faut faire pour valider cette étape. 
-            Si les faits sont insuffisants, réclame les preuves manquantes."""
-            
-            resp = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            res_text = resp.choices[0].message.content
-            save_step_progress(st.session_state.user_email, st.session_state.current_dossier, faits_in, res_text, idx)
-            st.session_state.last_ia = res_text
-            st.session_state.trigger = True
-            st.rerun()
-
-with c2:
-    st.subheader("🎯 Instruction Kareem")
-    # Affichage intelligent
-    ia_txt = st.session_state.get('last_ia', analyse_etape)
-    if ia_txt:
-        if st.session_state.get('trigger', False):
-            typewriter(ia_txt)
-            st.session_state.trigger = False
-        else:
-            st.markdown(f'<div class="kareem-card"><b>🤖 Kareem IA :</b><br>{ia_txt}</div>', unsafe_allow_html=True)
+with col2:
+    st.subheader("🤖 Rapport de Kareem")
+    ia_val = st.session_state.get('last_ia', analyse)
+    if ia_val:
+        st.markdown(f'<div class="kareem-box">{ia_val}</div>', unsafe_allow_html=True)
+        if idx == 8:
+            st.download_button("📥 Télécharger le modèle", ia_val, file_name="acte_juridique.txt")
+    else:
+        st.info("Kareem attend vos éléments pour agir.")
