@@ -1,11 +1,3 @@
-C'est noté. Pour éviter toute confusion entre les versions, voici le code **complet, corrigé et sécurisé**. 
-
-Ce code règle l'erreur `sqlite3.OperationalError` en s'assurant que la structure de la base de données (4 colonnes) correspond parfaitement aux données envoyées (4 valeurs).
-
-### ⚠️ IMPORTANT AVANT DE LANCER :
-**Supprime le fichier `legalos_prod.db`** dans ton dossier pour que le script puisse recréer la table avec la bonne structure.
-
-```python
 import os
 import sqlite3
 import asyncio
@@ -37,7 +29,6 @@ else:
 def init_db():
     conn = sqlite3.connect('legalos_prod.db', check_same_thread=False)
     c = conn.cursor()
-    # On crée une table propre avec exactement 4 colonnes
     c.execute('''CREATE TABLE IF NOT EXISTS steps 
                  (user_email TEXT, step_idx INTEGER, faits TEXT, analyse TEXT, 
                  PRIMARY KEY(user_email, step_idx))''')
@@ -109,7 +100,6 @@ def main():
         ui.button(icon='logout', on_click=lambda: (app.storage.user.clear(), ui.navigate.to('/login'))).props('flat color=slate-500')
 
     with ui.row().classes('w-full no-wrap h-screen gap-0'):
-        # Sidebar
         with ui.column().classes('w-64 bg-slate-950 p-4 border-r border-slate-900 h-full'):
             for i, t in enumerate(engine.titles):
                 is_active = (i == current_idx)
@@ -117,7 +107,6 @@ def main():
                     ui.label(t).classes(f'text-[10px] uppercase { "text-emerald-400 font-bold" if is_active else "text-slate-500" }')
                     r.on('click', lambda i=i: (app.storage.user.update({'step_idx': i}), ui.navigate.to('/')))
 
-        # Main Area
         with ui.column().classes('flex-grow p-12 overflow-y-auto'):
             ui.label(engine.titles[current_idx]).classes('text-4xl font-black mb-8')
             
@@ -131,7 +120,6 @@ def main():
                 
                 async def run_analysis():
                     if not input_area.value: return ui.notify("Veuillez saisir des faits.")
-                    
                     spinner.set_visibility(True)
                     btn_gen.set_visibility(False)
                     
@@ -140,7 +128,6 @@ def main():
                     if data:
                         conn = sqlite3.connect('legalos_prod.db'); c = conn.cursor()
                         for s in data['steps']:
-                            # INSERTION DES 4 VALEURS CORRESPONDANTES AUX 4 COLONNES
                             c.execute("INSERT OR REPLACE INTO steps VALUES (?,?,?,?)", 
                                       (user_email, s['idx'], input_area.value if s['idx']==0 else "Analyse Freeman", s['content']))
                         conn.commit(); conn.close()
@@ -159,7 +146,5 @@ def main():
                     ui.label('RÉSULTAT KAREEM').classes('text-[10px] text-emerald-500 font-bold mb-4 tracking-widest')
                     ui.markdown(s_analyse).classes('text-slate-300 leading-relaxed')
 
-# --- 5. LANCEMENT ---
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(port=8080, storage_secret='SECRET_KEY_2026', dark=True, reload=False, title="LegalOS")
-```
