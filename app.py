@@ -1,174 +1,167 @@
 import os
 import sqlite3
 import asyncio
+import json
+import resend
 from dotenv import load_dotenv
 from groq import Groq
 from nicegui import ui, app
 
-# --- 1. CONFIGURATION & SÉCURITÉ ---
-load_dotenv() 
-GROQ_KEY = os.getenv("GROQ_API_KEY")
+# --- 1. CONFIGURATION RÉELLE ---
+load_dotenv()
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+resend.api_key = os.getenv("RESEND_API_KEY")
 
-# Initialisation du client Groq
-# Note : S'assure que GROQ_API_KEY est bien dans ton fichier .env
-client = Groq(api_key=GROQ_KEY)
-
-# --- 2. GESTION DE LA BASE DE DONNÉES ---
+# --- 2. BASE DE DONNÉES ---
 def init_db():
-    conn = sqlite3.connect('legalos_v11.db')
+    conn = sqlite3.connect('legalos_prod.db', check_same_thread=False)
     c = conn.cursor()
-    # Table pour les 11 étapes par utilisateur et par dossier
+    # Table Utilisateurs : gère les accès et le statut Pro
+    c.execute('''CREATE TABLE IF NOT EXISTS users 
+                 (email TEXT PRIMARY KEY, is_pro INTEGER DEFAULT 0, dossiers_count INTEGER DEFAULT 0)''')
+    # Table Étapes : Stocke les analyses de la méthode Freeman
     c.execute('''CREATE TABLE IF NOT EXISTS steps 
-                 (user_email TEXT, dossier_nom TEXT, step_idx INTEGER, faits TEXT, analyse TEXT, 
-                 PRIMARY KEY(user_email, dossier_nom, step_idx))''')
+                 (user_email TEXT, dossier_id TEXT, step_idx INTEGER, faits TEXT, analyse TEXT, 
+                 PRIMARY KEY(user_email, dossier_id, step_idx))''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# --- 3. LOGIQUE MÉTIER (MÉTHODE FREEMAN) ---
-class FreemanEngine:
+# --- 3. MOTEUR KAREEM (MÉTHODE FREEMAN) ---
+class KareemEngine:
     def __init__(self):
-        self.steps_titles = [
-            "1. Qualification (Diagnostic)", "2. Objectif (Le Gain)", 
-            "3. Base Légale (Loi/Juris)", "4. Inventaire (Preuves)", 
-            "5. Analyse des Risques", "6. Stratégie Amiable",
-            "7. Plan d'Attaque (Tactique)", "8. Rédaction (Actes)", 
-            "9. Audience (Préparation)", "10. Jugement (Analyse)", 
-            "11. Recours (Suites)"
+        self.titles = [
+            "Qualification", "Objectif", "Base Légale", "Inventaire", 
+            "Risques", "Amiable", "Attaque", "Rédaction", "Audience", "Jugement", "Recours"
         ]
 
-    async def get_kareem_analysis(self, step_idx, user_input):
-        """Appel à l'IA Kareem pour l'analyse juridique"""
+    async def generate_full_strategy(self, user_input):
+        """L'IA pré-analyse les 11 étapes d'un coup"""
         prompt = f"""
-        Tu es Kareem, IA d'élite spécialisée en Droit des Contrats et Obligations.
-        Méthode Freeman - Étape {step_idx + 1}: {self.steps_titles[step_idx]}
-        
-        FAITS FOURNIS : {user_input}
-        
-        TON RÔLE :
-        - Analyse stratégique rigoureuse.
-        - Cite les articles du Code Civil (réforme 2016).
-        - Formatage : Utilise '### 📜 ANALYSE' et '### 💡 STRATÉGIE'.
+        Tu es Kareem, expert en Droit (Méthode Freeman). Analyse : {user_input}
+        Réponds UNIQUEMENT en JSON avec cette structure précise :
+        {{"steps": [
+            {{"idx": 0, "content": "Analyse de qualification..."}},
+            ... (jusqu'à l'index 10)
+        ]}}
+        Utilise le droit français. Sois technique et stratégique.
         """
         try:
             response = await asyncio.to_thread(
                 client.chat.completions.create,
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
+                response_format={ "type": "json_object" }
             )
-            return response.choices[0].message.content
+            return json.loads(response.choices[0].message.content)
         except Exception as e:
-            return f"Erreur de connexion à Kareem : {str(e)}"
+            print(f"Erreur IA : {e}")
+            return None
 
-engine = FreemanEngine()
+engine = KareemEngine()
 
-# --- 4. INTERFACE UTILISATEUR (UI) ---
+# --- 4. SERVICES (EMAIL) ---
+async def send_magic_link(email):
+    """Envoie un vrai mail via Resend (si l'API KEY est présente)"""
+    if not resend.api_key:
+        ui.notify("Mode simulation : Email non envoyé (Clé API manquante)", color='warning')
+        return True
+    
+    try:
+        resend.Emails.send({
+            "from": "Kareem <onboarding@resend.dev>",
+            "to": [email],
+            "subject": "Accès à votre Cabinet LegalOS",
+            "html": f"<strong>Bienvenue.</strong> Connectez-vous ici : <a href='#'>Lien d'accès</a>"
+        })
+        return True
+    except Exception as e:
+        ui.notify(f"Erreur mail : {e}", color='red')
+        return False
+
+# --- 5. PAGES UI ---
 
 @ui.page('/login')
 def login_page():
     with ui.card().classes('absolute-center p-12 w-96 bg-slate-950 border border-emerald-500/30 shadow-2xl rounded-2xl'):
         ui.label('LEGAL OS').classes('text-4xl font-black text-emerald-500 mx-auto mb-2 tracking-tighter')
-        ui.label('FREEMAN METHOD').classes('text-[10px] text-emerald-500/50 mx-auto mb-8 tracking-[0.3em] font-bold')
+        ui.label('FREEMAN METHOD').classes('text-[10px] text-emerald-500/50 mx-auto mb-8 tracking-[0.3em]')
         
         email = ui.input('Email du Cabinet').props('dark outlined color=emerald').classes('w-full mb-4')
         
-        def handle_login():
-            if email.value:
-                app.storage.user.update({'authenticated': True, 'email': email.value})
+        async def auth(mode):
+            if not email.value: return ui.notify("Email requis")
+            success = await send_magic_link(email.value)
+            if success:
+                app.storage.user.update({'auth': True, 'email': email.value})
+                conn = sqlite3.connect('legalos_prod.db'); c = conn.cursor()
+                c.execute("INSERT OR IGNORE INTO users (email) VALUES (?)", (email.value,))
+                conn.commit(); conn.close()
                 ui.navigate.to('/')
-            else:
-                ui.notify('Veuillez entrer un email valide', color='warning')
 
-        ui.button('ACCÉDER AU SYSTÈME', on_click=handle_login).classes('w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-3 rounded-xl')
-        ui.label('Paiement sécurisé par Stripe').classes('text-[10px] text-slate-600 mx-auto mt-6')
+        ui.button('SE CONNECTER', on_click=lambda: auth("login")).classes('w-full bg-emerald-600 font-bold py-3 rounded-xl mb-3')
+        ui.button('INSCRIPTION (1er Essai Offert)', on_click=lambda: auth("reg")).props('outline color=emerald').classes('w-full font-bold py-3 rounded-xl')
 
 @ui.page('/')
-def main_page():
-    # Redirection si non connecté
-    if not app.storage.user.get('authenticated', False):
-        return ui.navigate.to('/login')
-
+def main():
+    if not app.storage.user.get('auth'): return ui.navigate.to('/login')
+    
     user_email = app.storage.user.get('email')
-    state = {'step_idx': 0, 'dossier': 'Dossier_Standard'}
+    state = app.storage.user.get('state', {'idx': 0})
 
-    ui.query('body').style('background-color: #020617; color: #f8fafc; font-family: "Inter", sans-serif;')
+    # Header
+    with ui.header().classes('bg-slate-950 border-b border-emerald-500/10 p-6 justify-between items-center'):
+        ui.label('LEGAL OS').classes('text-2xl font-black text-emerald-500')
+        ui.button(icon='logout', on_click=lambda: (app.storage.user.clear(), ui.navigate.to('/login'))).props('flat color=slate-500')
 
-    # --- HEADER ---
-    with ui.header().classes('bg-slate-950/80 backdrop-blur-md border-b border-emerald-500/10 p-6 justify-between items-center'):
-        with ui.row().classes('items-center gap-3'):
-            ui.label('LEGAL OS').classes('text-2xl font-black text-emerald-500 tracking-tighter')
-            ui.badge('V11 PRO', color='emerald').classes('text-[8px] font-bold')
-        
-        with ui.row().classes('items-center gap-6'):
-            ui.label(user_email).classes('text-xs text-slate-500 italic')
-            ui.button(icon='logout', on_click=lambda: (app.storage.user.clear(), ui.navigate.to('/login'))).props('flat color=slate-500')
-
-    # --- LAYOUT PRINCIPAL ---
     with ui.row().classes('w-full no-wrap h-screen gap-0'):
-        
-        # Sidebar Gauche (Navigation des 11 étapes)
-        with ui.column().classes('w-80 bg-slate-950 p-6 border-r border-slate-900 h-full overflow-y-auto'):
-            ui.label('NAVIGATION STRATÉGIQUE').classes('text-[10px] font-bold text-slate-700 mb-8 tracking-widest uppercase')
-            for i, title in enumerate(engine.steps_titles):
-                is_active = (i == state['step_idx'])
-                with ui.row().classes(f'''w-full p-4 mb-2 rounded-xl cursor-pointer transition-all 
-                    {"bg-emerald-500/10 border border-emerald-500/20 shadow-lg" if is_active else "hover:bg-slate-900/50"}''') as r:
-                    ui.label(str(i+1)).classes(f'font-black {"text-emerald-500" if is_active else "text-slate-800"}')
-                    ui.label(title.split('(')[0]).classes(f'text-xs {"text-slate-100 font-bold" if is_active else "text-slate-500"}')
-                    r.on('click', lambda i=i: (state.update({'step_idx': i}), ui.navigate.to('/')))
+        # Sidebar
+        with ui.column().classes('w-72 bg-slate-950 p-6 border-r border-slate-900 h-full'):
+            for i, t in enumerate(engine.titles):
+                active = i == state['idx']
+                with ui.row().classes(f'w-full p-3 mb-1 rounded-lg cursor-pointer { "bg-emerald-500/10" if active else "" }') as r:
+                    ui.label(t).classes(f'text-xs { "text-emerald-500 font-bold" if active else "text-slate-500" }')
+                    r.on('click', lambda i=i: (state.update({'idx': i}), app.storage.user.update({'state': state}), ui.navigate.to('/')))
 
-        # Zone de Travail Centrale
-        with ui.column().classes('flex-grow p-12 overflow-y-auto max-w-5xl'):
-            ui.label(f"SEQUENCE {state['step_idx'] + 1}").classes('text-emerald-500 font-bold text-[10px] tracking-[0.4em] mb-2')
-            ui.label(engine.steps_titles[state['step_idx']]).classes('text-5xl font-black mb-12 tracking-tight text-slate-100')
-
-            # Chargement des données sauvegardées
-            conn = sqlite3.connect('legalos_v11.db'); c = conn.cursor()
-            c.execute("SELECT faits, analyse FROM steps WHERE user_email=? AND step_idx=?", (user_email, state['step_idx']))
+        # Espace Travail
+        with ui.column().classes('flex-grow p-12 overflow-y-auto'):
+            ui.label(engine.titles[state['idx']]).classes('text-4xl font-black mb-8 text-slate-100')
+            
+            # DB Load
+            conn = sqlite3.connect('legalos_prod.db'); c = conn.cursor()
+            c.execute("SELECT faits, analyse FROM steps WHERE user_email=? AND step_idx=?", (user_email, state['idx']))
             row = c.fetchone(); conn.close()
-            saved_faits, saved_analyse = row if row else ("", "")
+            s_faits, s_analyse = row if row else ("", "")
 
-            with ui.card().classes('bg-slate-900/40 border border-slate-800 p-8 w-full rounded-2xl shadow-inner'):
-                ui.label('SAISIE DES FAITS ET PIÈCES').classes('text-[10px] font-bold text-slate-600 mb-4 tracking-widest')
-                input_area = ui.textarea(value=saved_faits, placeholder='Décrivez ici les éléments contractuels...').classes('w-full text-lg bg-transparent text-slate-200').props('borderless dark')
+            with ui.card().classes('bg-slate-900 border border-slate-800 p-8 w-full rounded-2xl'):
+                input_txt = ui.textarea(value=s_faits, placeholder='Qualification brute...').classes('w-full text-lg').props('dark borderless')
                 
-                async def run_kareem_flow():
-                    if not input_area.value:
-                        ui.notify('Veuillez saisir des faits', color='warning')
-                        return
-                    
-                    output_container.clear()
-                    with output_container:
-                        ui.spinner(size='lg', color='emerald').classes('mx-auto mt-4')
-                    
-                    analysis = await engine.get_kareem_analysis(state['step_idx'], input_area.value)
-                    
-                    # Sauvegarde en base
-                    conn = sqlite3.connect('legalos_v11.db'); c = conn.cursor()
-                    c.execute("INSERT OR REPLACE INTO steps VALUES (?,?,?,?,?)", 
-                              (user_email, state['dossier'], state['step_idx'], input_area.value, analysis))
-                    conn.commit(); conn.close()
+                async def process():
+                    # Vérification quota (à lier à Stripe plus tard)
+                    loading.set_visibility(True)
+                    data = await engine.generate_full_strategy(input_txt.value)
+                    if data:
+                        conn = sqlite3.connect('legalos_prod.db'); c = conn.cursor()
+                        for s in data['steps']:
+                            c.execute("INSERT OR REPLACE INTO steps VALUES (?,?,?,?,?)", 
+                                      (user_email, "Dossier_1", s['idx'], input_txt.value if s['idx']==0 else "Auto", s['content']))
+                        conn.commit(); conn.close()
+                        ui.notify("Stratégie Freeman générée !", color='emerald')
+                        ui.navigate.to('/')
+                    loading.set_visibility(False)
 
-                    output_container.clear()
-                    with output_container:
-                        ui.markdown(analysis).classes('p-8 bg-slate-900 border-l-4 border-emerald-500 rounded-r-xl text-slate-100 shadow-2xl w-full leading-relaxed')
+                if state['idx'] == 0:
+                    ui.button('GÉNÉRER TOUTE LA STRATÉGIE', on_click=process).classes('w-full mt-4 bg-emerald-600 font-bold py-4')
+                
+                loading = ui.spinner(color='emerald').classes('mx-auto mt-4')
+                loading.set_visibility(False)
 
-                ui.button('LANCER L\'ANALYSE KAREEM', on_click=run_kareem_flow).classes('w-full mt-8 bg-emerald-600 hover:bg-emerald-500 font-black py-4 rounded-xl shadow-xl shadow-emerald-900/20 transition-transform active:scale-95')
+            if s_analyse:
+                with ui.card().classes('w-full mt-6 bg-slate-900/50 p-8'):
+                    ui.markdown(s_analyse)
 
-            # Container pour le résultat
-            output_container = ui.column().classes('w-full mt-8')
-            if saved_analyse:
-                with output_container:
-                    ui.markdown(saved_analyse).classes('p-8 bg-slate-900 border-l-4 border-emerald-500 rounded-r-xl text-slate-100 shadow-2xl w-full')
-
-# --- 5. LANCEMENT SÉCURISÉ (Fix pour Windows & Python 3.14) ---
+# --- 6. RUN (CONFIG CLOUD) ---
 if __name__ in {"__main__", "__mp_main__"}:
-    # Note : storage_secret est indispensable pour garder la session de login
-    ui.run(
-        title="LegalOS - Freeman Method", 
-        dark=True, 
-        port=8080, 
-        reload=False, 
-        storage_secret='freeman_ultra_secret_2026'
-    )
+    port = int(os.environ.get('PORT', 8080))
+    ui.run(host='0.0.0.0', port=port, storage_secret='FREEMAN_SECRET_KEY_2026', dark=True, reload=False)
