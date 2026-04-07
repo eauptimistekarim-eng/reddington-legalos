@@ -1,186 +1,152 @@
-import streamlit as st
+import os
 import sqlite3
-import bcrypt
-import time
-import PyPDF2
+import asyncio
+from dotenv import load_dotenv
 from groq import Groq
+from nicegui import ui
 
-# ---------------- CONFIGURATION GROQ ----------------
-GROQ_KEY = "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"
+# --- CHARGEMENT SÉCURISÉ ---
+load_dotenv()
+GROQ_KEY = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=GROQ_KEY)
 
-st.set_page_config(page_title="LegalOS - Freeman 11 Steps", layout="wide")
+class LegalOS:
+    def __init__(self):
+        self.user_email = "contact@cabinet.fr"
+        self.current_dossier = "Dossier_Alpha_2026"  # Lié à ton projet Reddington
+        self.current_step_idx = 0
+        self.steps_titles = [
+            "1. Qualification (Diagnostic)", "2. Objectif (Le Gain)", "3. Base Légale (Loi/Juris)",
+            "4. Inventaire (Preuves)", "5. Analyse des Risques", "6. Stratégie Amiable",
+            "7. Plan d'Attaque (Tactique)", "8. Rédaction (Actes)", "9. Audience (Préparation)",
+            "10. Jugement (Analyse)", "11. Recours (Suites)"
+        ] # Respect des 11 étapes de la méthode Reddington/Freeman
+        self.setup_db()
 
-# ---------------- INITIALISATION BASE DE DONNÉES ----------------
-def init_db():
-    conn = sqlite3.connect('legalos_v11.db')
-    c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS users (email TEXT PRIMARY KEY, password TEXT, name TEXT)')
-    c.execute('CREATE TABLE IF NOT EXISTS dossiers (nom TEXT, user_email TEXT, PRIMARY KEY(nom, user_email))')
-    c.execute('CREATE TABLE IF NOT EXISTS steps (user_email TEXT, dossier_nom TEXT, step_idx INTEGER, faits TEXT, analyse TEXT, validated INTEGER DEFAULT 0, PRIMARY KEY(user_email, dossier_nom, step_idx))')
-    conn.commit()
-    conn.close()
-
-init_db()
-
-# ---------------- EFFET MACHINE À ÉCRIRE (RYTHME LÉGAL) ----------------
-def typewriter(text, speed=0.005):
-    container = st.empty()
-    full_text = ""
-    for char in text:
-        full_text += char
-        container.markdown(f'<div style="background:#161b22; padding:20px; border-left:5px solid #10b981; border-radius:10px; font-family:monospace; color:#e2e8f0; line-height:1.6;"><b>🤖 KAREEM :</b><br><br>{full_text}▌</div>', unsafe_allow_html=True)
-        time.sleep(speed)
-    container.markdown(f'<div style="background:#161b22; padding:20px; border-left:5px solid #10b981; border-radius:10px; font-family:monospace; color:#e2e8f0; line-height:1.6;"><b>🤖 KAREEM :</b><br><br>{text}</div>', unsafe_allow_html=True)
-
-# ---------------- AUTHENTIFICATION ----------------
-if "auth" not in st.session_state: st.session_state.auth = False
-if "current_step_idx" not in st.session_state: st.session_state.current_step_idx = 1
-
-if not st.session_state.auth:
-    st.title("⚖️ LegalOS - Freeman Method")
-    with st.form("login"):
-        e = st.text_input("Email")
-        p = st.text_input("Mot de passe", type="password")
-        if st.form_submit_button("Entrer au Cabinet"):
-            st.session_state.auth, st.session_state.user_email = True, e
-            st.rerun()
-    st.stop()
-
-# ---------------- GESTION DES DOSSIERS ----------------
-if "page" not in st.session_state: st.session_state.page = "cabinet"
-
-if st.session_state.page == "cabinet":
-    st.title("📂 Cabinet de Pilotage Stratégique")
-    if st.button("➕ NOUVEAU DOSSIER FREEMAN"):
-        st.session_state.current_dossier = f"Dossier_{int(time.time())}"
-        st.session_state.page, st.session_state.current_step_idx = "work", 1
-        st.rerun()
-    
-    conn = sqlite3.connect('legalos_v11.db')
-    c = conn.cursor()
-    c.execute("SELECT nom FROM dossiers WHERE user_email=?", (st.session_state.user_email,))
-    for d in c.fetchall():
-        if st.button(f"📁 {d[0]}", use_container_width=True):
-            st.session_state.current_dossier, st.session_state.page = d[0], "work"
-            st.rerun()
-    st.stop()
-
-# ---------------- LES 11 ÉTAPES DE LA MÉTHODE ----------------
-steps_titles = [
-    "1. Qualification (Le Diagnostic)",
-    "2. Objectif (Le Gain visé)",
-    "3. Base Légale (La Loi)",
-    "4. Inventaire (Les Preuves PDF)",
-    "5. Analyse des Risques (Avocat du Diable)",
-    "6. Stratégie Amiable (Négociation)",
-    "7. Plan d'Attaque (Tactique)",
-    "8. Rédaction (Mise en demeure/Actes)",
-    "9. Audience (Préparation)",
-    "10. Jugement (Analyse de décision)",
-    "11. Recours (Suites à donner)"
-]
-
-with st.sidebar:
-    st.header("MÉTHODE FREEMAN")
-    if st.button("⬅ Cabinet"): st.session_state.page = "cabinet"; st.rerun()
-    choice = st.radio("Séquence :", steps_titles, index=st.session_state.current_step_idx - 1)
-    st.session_state.current_step_idx = steps_titles.index(choice) + 1
-    idx = st.session_state.current_step_idx
-
-st.title(f"💼 {st.session_state.current_dossier}")
-st.subheader(choice)
-
-# --- CHARGEMENT HISTORIQUE (POUR LA MÉMOIRE DE KAREEM) ---
-conn = sqlite3.connect('legalos_v11.db')
-c = conn.cursor()
-c.execute("SELECT step_idx, analyse FROM steps WHERE user_email=? AND dossier_nom=? AND step_idx < ?", 
-          (st.session_state.user_email, st.session_state.current_dossier, idx))
-history = "\n".join([f"E{r[0]}: {r[1]}" for r in c.fetchall()])
-
-# --- CHARGEMENT ÉTAPE ACTUELLE ---
-c.execute("SELECT faits, analyse, validated FROM steps WHERE user_email=? AND dossier_nom=? AND step_idx=?", 
-          (st.session_state.user_email, st.session_state.current_dossier, idx))
-row = c.fetchone()
-conn.close()
-f_db, a_db, v_db = row if row else ("", "", 0)
-
-col1, col2 = st.columns(2, gap="large")
-
-with col1:
-    st.write("### 📥 Saisie & Documents")
-    
-    # MODULE LECTURE PDF (Spécifique Etape 4 mais disponible partout si besoin)
-    pdf_text = ""
-    if idx == 4:
-        file = st.file_uploader("Scanner de preuves (PDF)", type="pdf")
-        if file:
-            reader = PyPDF2.PdfReader(file)
-            for page in reader.pages: pdf_text += page.extract_text()
-            st.success("Preuves ingérées par Kareem.")
-
-    u_input = st.text_area("Notes complémentaires ou éléments de fait :", value=f_db, height=350)
-    
-    if st.button("⚡ EXECUTER KAREEM"):
-        with st.spinner("Kareem traite les données..."):
-            instructions = {
-                1: "Qualifie juridiquement les faits. Identifie les infractions ou manquements.",
-                2: "Définis l'objectif final. Que voulons-nous obtenir précisément ?",
-                3: "Cite les articles de loi, codes et jurisprudence applicables.",
-                4: "Analyse les documents PDF fournis et confronte-les à la base légale de l'étape 3.",
-                5: "Fais l'analyse critique : quels sont les points faibles de notre dossier ?",
-                6: "Propose un protocole d'accord transactionnel ou une phase amiable.",
-                7: "Établis la chronologie tactique du dossier.",
-                8: "Rédige la structure argumentative de la mise en demeure ou de l'acte.",
-                9: "Prépare les éléments de langage pour l'audience.",
-                10: "Analyse le résultat obtenu et les motifs du juge.",
-                11: "Détermine s'il faut faire appel ou exécuter la décision."
-            }
-            
-            prompt = f"""
-            Tu es Kareem, Directeur Juridique expert de la méthode Freeman.
-            HISTORIQUE DU DOSSIER : {history}
-            MISSION ÉTAPE {idx} ({choice}) : {instructions.get(idx)}
-            SAISIE/DOCS : {u_input} {pdf_text}
-            Donne une analyse directive, structurée et sans fioritures.
-            """
-            
-            resp = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
-            out = resp.choices[0].message.content
-            
-            # SAUVEGARDE
-            conn = sqlite3.connect('legalos_v11.db')
-            c = conn.cursor()
-            c.execute("INSERT OR IGNORE INTO dossiers VALUES (?,?)", (st.session_state.current_dossier, st.session_state.user_email))
-            c.execute("INSERT OR REPLACE INTO steps VALUES (?,?,?,?,?,0)", (st.session_state.user_email, st.session_state.current_dossier, idx, u_input, out))
-            conn.commit(); conn.close()
-            
-            st.session_state.type_trigger = out
-            st.rerun()
-
-with col2:
-    st.write("### 🤖 Décision de Kareem")
-    final_txt = st.session_state.get("type_trigger", a_db)
-    if final_txt:
-        if "type_trigger" in st.session_state:
-            typewriter(final_txt)
-            del st.session_state.type_trigger
-        else:
-            st.markdown(f'<div style="background:#161b22; padding:20px; border-left:5px solid #10b981; border-radius:10px; font-family:monospace; color:#e2e8f0; line-height:1.6;">{final_txt}</div>', unsafe_allow_html=True)
-
-# --- VALIDATION POUR PASSER À LA SUITE ---
-if a_db and not v_db:
-    st.divider()
-    if st.button(f"✅ VALIDER ET PASSER À L'ÉTAPE SUIVANTE"):
+    def setup_db(self):
         conn = sqlite3.connect('legalos_v11.db')
         c = conn.cursor()
-        c.execute("UPDATE steps SET validated=1 WHERE user_email=? AND dossier_nom=? AND step_idx=?", 
-                  (st.session_state.user_email, st.session_state.current_dossier, idx))
-        conn.commit(); conn.close()
+        c.execute('CREATE TABLE IF NOT EXISTS dossiers (nom TEXT, user_email TEXT, PRIMARY KEY(nom, user_email))')
+        c.execute('''CREATE TABLE IF NOT EXISTS steps 
+                    (user_email TEXT, dossier_nom TEXT, step_idx INTEGER, faits TEXT, analyse TEXT, 
+                    validated INTEGER DEFAULT 0, PRIMARY KEY(user_email, dossier_nom, step_idx))''')
+        conn.commit()
+        conn.close()
+
+    def get_history(self):
+        conn = sqlite3.connect('legalos_v11.db')
+        c = conn.cursor()
+        c.execute("SELECT step_idx, analyse FROM steps WHERE user_email=? AND dossier_nom=? AND step_idx < ?", 
+                  (self.user_email, self.current_dossier, self.current_step_idx + 1))
+        rows = c.fetchall()
+        conn.close()
+        return "\n".join([f"E{r[0]}: {r[1][:200]}..." for r in rows])
+
+    async def run_kareem(self, u_input, output_container):
+        if not u_input:
+            ui.notify("Saisissez des faits pour lancer Kareem", color='warning')
+            return
+
+        output_container.clear()
+        with output_container:
+            ui.spinner(size='lg', color='emerald').classes('mx-auto mt-4')
+
+        history = self.get_history()
         
-        if st.session_state.current_step_idx < len(steps_titles):
-            st.session_state.current_step_idx += 1
-            st.rerun()
-        else:
-            st.balloons()
-            st.success("Dossier Freeman complété !")
+        # PROMPT EXPERT : CONTRATS / OBLIGATIONS / EXÉCUTIONS
+        prompt = f"""
+        Tu es Kareem, IA d'élite spécialisée en Droit des Contrats, Obligations et Exécutions.
+        MÉTHODE FREEMAN - Étape {self.current_step_idx + 1}: {self.steps_titles[self.current_step_idx]}
+        
+        HISTORIQUE : {history}
+        SAISIE ACTUELLE : {u_input}
+        
+        DIRECTIVES :
+        1. Cite impérativement les articles du Code Civil (Réf. 2016).
+        2. Analyse la force obligatoire, les manquements et les voies d'exécution.
+        3. Format: 'ARTICLE: [Texte]' et 'DICO: [Vulgarisation]'.
+        4. Ton ton est celui d'un Directeur Juridique : sec, précis, stratégique.
+        """
+
+        try:
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            out = response.choices[0].message.content
+            
+            # Sauvegarde dans legalos_v11.db
+            conn = sqlite3.connect('legalos_v11.db')
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO steps (user_email, dossier_nom, step_idx, faits, analyse) VALUES (?,?,?,?,?)", 
+                      (self.user_email, self.current_dossier, self.current_step_idx + 1, u_input, out))
+            conn.commit(); conn.close()
+
+            output_container.clear()
+            with output_container:
+                res_box = ui.markdown('').classes('p-8 bg-slate-900 border-l-4 border-emerald-500 rounded-r-xl text-slate-100 shadow-2xl w-full leading-relaxed')
+            
+            typed = ""
+            for char in out:
+                typed += char
+                fmt = typed.replace("ARTICLE:", "### 📜 FONDEMENT LÉGAL").replace("DICO:", "--- \n ### 📖 DICO")
+                res_box.content = fmt + " ▌"
+                await asyncio.sleep(0.002)
+            res_box.content = fmt
+            
+        except Exception as e:
+            ui.notify(f"Erreur API : {e}", color='red')
+
+    @ui.page('/')
+    def main_ui(self):
+        ui.query('body').style('background-color: #020617; color: #f8fafc; font-family: "Inter", sans-serif;')
+        
+        # --- HEADER ---
+        with ui.header().classes('bg-slate-950 border-b border-emerald-500/20 p-6 justify-between items-center'):
+            with ui.row().classes('items-center gap-3'):
+                ui.label('LEGAL OS').classes('text-2xl font-black text-emerald-500 tracking-tighter')
+                ui.badge('FREEMAN METHOD', color='emerald').classes('text-[10px] px-2')
+            
+            with ui.row().classes('items-center gap-4'):
+                ui.button('ACCÈS ILLIMITÉ (40€)', on_click=lambda: ui.open('https://buy.stripe.com/test_votre_lien')).props('elevated color=emerald').classes('font-bold rounded-full px-8 shadow-lg shadow-emerald-900/20')
+
+        # --- CONTENU ---
+        with ui.row().classes('w-full no-wrap h-screen gap-0'):
+            # Sidebar
+            with ui.column().classes('w-80 bg-slate-950 p-8 border-r border-slate-900 h-full overflow-y-auto'):
+                ui.label('WORKFLOW').classes('text-[10px] font-bold text-slate-600 mb-8 tracking-[0.2em] uppercase')
+                for i, title in enumerate(self.steps_titles):
+                    active = i == self.current_step_idx
+                    with ui.row().classes(f'w-full p-4 mb-2 rounded-xl cursor-pointer transition-all {"bg-emerald-500/10 border border-emerald-500/20" if active else "hover:bg-slate-900/50"}') as r:
+                        ui.label(str(i+1)).classes(f'font-black {"text-emerald-500" if active else "text-slate-700"}')
+                        ui.label(title.split('(')[0]).classes(f'text-xs font-bold {"text-slate-100" if active else "text-slate-500"}')
+                        r.on('click', lambda i=i: (setattr(self, 'current_step_idx', i), ui.navigate.to('/')))
+
+            # Main
+            with ui.column().classes('flex-grow p-16 overflow-y-auto max-w-5xl'):
+                ui.label(f"SÉQUENCE {self.current_step_idx + 1}").classes('text-emerald-500 font-bold text-xs tracking-widest mb-2')
+                ui.label(self.steps_titles[self.current_step_idx]).classes('text-6xl font-black mb-12 tracking-tight text-slate-100')
+
+                # Récupération données existantes
+                conn = sqlite3.connect('legalos_v11.db'); c = conn.cursor()
+                c.execute("SELECT faits, analyse FROM steps WHERE user_email=? AND dossier_nom=? AND step_idx=?", 
+                          (self.user_email, self.current_dossier, self.current_step_idx + 1))
+                row = c.fetchone(); conn.close()
+                f_db, a_db = row if row else ("", "")
+
+                with ui.column().classes('w-full gap-8'):
+                    with ui.card().classes('bg-slate-900/40 border border-slate-800 p-8 rounded-2xl shadow-inner w-full'):
+                        ui.label('ÉLÉMENTS DU DOSSIER').classes('text-[10px] font-bold text-slate-500 mb-4 tracking-widest')
+                        u_input = ui.textarea(value=f_db, placeholder='Saisissez les faits...').props('borderless dark').classes('w-full text-xl min-h-[250px] bg-transparent text-slate-200 focus:outline-none')
+                        
+                        with ui.row().classes('w-full justify-end mt-6 pt-6 border-t border-slate-800'):
+                            ui.button('LANCER L\'ANALYSE KAREEM', on_click=lambda: self.run_kareem(u_input.value, output_container)).classes('px-12 py-4 bg-emerald-600 hover:bg-emerald-500 font-black rounded-xl shadow-xl shadow-emerald-900/40')
+
+                    output_container = ui.column().classes('w-full mt-8')
+                    if a_db:
+                        with output_container:
+                            ui.markdown(a_db.replace("ARTICLE:", "### 📜 FONDEMENT LÉGAL").replace("DICO:", "--- \n ### 📖 DICO")).classes('p-8 bg-slate-900 border-l-4 border-emerald-500 rounded-r-xl text-slate-100 shadow-2xl w-full')
+
+app = LegalOS()
+ui.run(title="LegalOS Freeman", dark=True, port=8080, reload=True)
