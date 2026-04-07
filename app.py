@@ -10,7 +10,6 @@ from datetime import datetime
 # --- 1. CONFIGURATION & IA ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, '.env'), override=True)
-
 client = Groq(api_key=os.getenv("GROQ_API_KEY")) if os.getenv("GROQ_API_KEY") else None
 
 # --- 2. BASE DE DONNÉES ---
@@ -38,37 +37,35 @@ class LegalExpert:
 
     def get_system_prompt(self, step_idx):
         prompts = [
-            "Tu es Kareem. Utilise l'art du questionnement pour qualifier l'affaire.",
-            "Détermine l'objectif final réel de l'utilisateur. Pose des questions sur ses priorités.",
-            "Donne des articles de loi précis et des jurisprudences vérifiables (Légifrance).",
-            "Analyse le document fourni. Explique sa valeur juridique ajoutée.",
-            "Analyse les risques. Détermine le % de réussite et propose des solutions de protection.",
-            "Expert en conciliation. Rédige une mise en demeure ou un mail diplomatique.",
-            "Sois l'avocat du diable et Machiavel. Anticipe les coups bas et prépare la riposte.",
-            "Génère des modèles de documents juridiques modifiables basés sur l'analyse.",
-            "Incarne le Juge. Simule un débat contradictoire (ping-pong) avec l'utilisateur.",
-            "Analyse le jugement rendu (PDF) et critique les points de droit.",
-            "Fais le point final et propose les voies de recours stratégiques."
+            "Tu es Kareem. Utilise l'art du questionnement pour qualifier l'affaire. Pose des questions une par une pour guider l'utilisateur.",
+            "Détermine l'objectif réel. Pose des questions sur les priorités (argent, justice, rapidité ?).",
+            "Base Légale : Donne obligatoirement des articles de loi et des jurisprudences réelles et vérifiables.",
+            "Inventaire : Analyse les documents. Explique leur force probante et leur valeur juridique.",
+            "Risques : Analyse le % de réussite. Propose des mesures de protection personnelle (administratives/légales).",
+            "Amiable : Expert en négo. Explique la mise en demeure et propose un mail de diplomatie stratégique.",
+            "Attaque : Sois l'avocat du diable et Machiavel. Anticipe les coups de l'adversaire. Propose des requêtes et plaintes.",
+            "Rédaction : Propose de générer des modèles de documents modifiables basés sur les données récoltées.",
+            "Audience : Incarne le Juge. Fais un ping-pong conversationnel pour tester la solidité de l'argumentation.",
+            "Jugement : Analyse le PDF du jugement (si fourni) et critique les points de droit pour le recours.",
+            "Recours : Fais le bilan final et propose les solutions de sortie ou d'appel."
         ]
-        return f"{prompts[step_idx]} Parle de manière fluide. Pose des questions pertinentes une par une."
+        return f"{prompts[step_idx]} Ton style est percutant, intelligent, et empathique. Ne fais pas de longs blocs, privilégie le dialogue."
 
 expert = LegalExpert()
 
-# --- 3. FONCTIONS UTILES ---
-async def typewriter_effect(label, text, speed=0.01):
+# --- 3. UI HELPERS ---
+async def typewriter_effect(label, text):
     full_text = ""
     for char in text:
         full_text += char
         label.set_content(full_text)
-        await asyncio.sleep(speed)
+        await asyncio.sleep(0.01)
 
-# --- 4. PAGES & NAVIGATION ---
+# --- 4. PAGES ---
 
 @ui.page('/')
 def index():
-    # Redirection automatique vers login ou dossiers
-    if not app.storage.user.get('auth'):
-        return ui.navigate.to('/login')
+    if not app.storage.user.get('auth'): return ui.navigate.to('/login')
     ui.navigate.to('/dossiers')
 
 @ui.page('/login')
@@ -77,7 +74,7 @@ def login():
         ui.label('LEGAL OS').classes('text-3xl font-black text-emerald-500 text-center w-full')
         email = ui.input('Email').props('dark outlined color=emerald').classes('w-full mb-4')
         def do_login():
-            if not email.value: return ui.notify("Email requis")
+            if not email.value: return
             app.storage.user.update({'email': email.value, 'auth': True})
             ui.navigate.to('/dossiers')
         ui.button('ACCÉDER', on_click=do_login).classes('w-full bg-emerald-600 font-bold')
@@ -86,7 +83,6 @@ def login():
 def list_dossiers():
     if not app.storage.user.get('auth'): return ui.navigate.to('/login')
     user_email = app.storage.user['email']
-
     ui.query('body').style('background-color: #020617;')
 
     with ui.header().classes('bg-slate-950 border-b border-emerald-500/10 p-4 justify-between items-center'):
@@ -99,84 +95,73 @@ def list_dossiers():
             def create():
                 if not nom.value: return
                 conn = sqlite3.connect('legalos_v2.db'); c = conn.cursor()
-                c.execute("INSERT INTO dossiers (user_email, nom, date_crea) VALUES (?, ?, ?)", 
-                          (user_email, nom.value, datetime.now().strftime("%d/%m/%Y")))
-                conn.commit(); conn.close()
-                ui.navigate.to('/dossiers')
+                c.execute("INSERT INTO dossiers (user_email, nom, date_crea) VALUES (?, ?, ?)", (user_email, nom.value, datetime.now().strftime("%d/%m/%Y")))
+                conn.commit(); conn.close(); ui.navigate.to('/dossiers')
             ui.button('CRÉER', on_click=create, icon='add').classes('bg-emerald-600')
 
         conn = sqlite3.connect('legalos_v2.db'); c = conn.cursor()
         c.execute("SELECT id, nom, date_crea FROM dossiers WHERE user_email=? AND statut='actif' ORDER BY id DESC", (user_email,))
         rows = c.fetchall(); conn.close()
-
         for d_id, d_nom, d_date in rows:
-            with ui.card().classes('w-full bg-slate-900 border border-slate-800 mb-2 hover:border-emerald-500/40 cursor-pointer'):
+            with ui.card().classes('w-full bg-slate-900 border border-slate-800 mb-2'):
                 with ui.row().classes('w-full items-center p-2'):
-                    with ui.column().classes('flex-grow').on('click', lambda d=d_id: ui.navigate.to(f'/workspace/{d}')):
-                        ui.label(d_nom).classes('font-bold text-lg text-white')
-                        ui.label(f"Créé le {d_date}").classes('text-xs text-slate-500')
-                    ui.button(icon='delete', on_click=lambda d=d_id: delete_dossier(d)).props('flat color=red')
+                    ui.label(d_nom).classes('font-bold text-lg text-white flex-grow cursor-pointer').on('click', lambda d=d_id: ui.navigate.to(f'/workspace/{d}'))
+                    ui.button(icon='delete', on_click=lambda d=d_id: delete_d(d)).props('flat color=red')
 
-def delete_dossier(id):
-    conn = sqlite3.connect('legalos_v2.db'); c = conn.cursor()
-    c.execute("DELETE FROM dossiers WHERE id=?", (id,))
-    conn.commit(); conn.close(); ui.navigate.to('/dossiers')
+def delete_d(id):
+    conn = sqlite3.connect('legalos_v2.db'); c = conn.cursor(); c.execute("DELETE FROM dossiers WHERE id=?", (id,)); conn.commit(); conn.close(); ui.navigate.to('/dossiers')
 
 @ui.page('/workspace/{d_id}')
 async def workspace(d_id: int):
     if not app.storage.user.get('auth'): return ui.navigate.to('/login')
     
-    # Gestion de l'étape courante
     if 'current_step' not in app.storage.user: app.storage.user['current_step'] = 0
     step_idx = app.storage.user['current_step']
 
     ui.query('body').style('background-color: #020617;')
 
+    # HEADER
     with ui.header().classes('bg-slate-950 border-b border-emerald-500/10 p-4 justify-between items-center'):
         ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/dossiers')).props('flat color=slate-400')
         ui.label(f'DOSSIER #{d_id}').classes('text-emerald-500 font-black')
-        ui.button('MAIL', icon='email').props('flat color=emerald')
+        ui.button(icon='email', on_click=lambda: ui.notify('Envoi du dossier par mail...')).props('flat color=emerald')
 
+    # BARRE LATÉRALE ET ZONE CENTRALE
     with ui.row().classes('w-full no-wrap h-screen gap-0'):
-        # Sidebar
         with ui.column().classes('w-64 bg-slate-950 border-r border-slate-900 p-4'):
             for i, name in enumerate(expert.steps):
-                is_active = (i == step_idx)
-                with ui.row().classes(f'w-full p-2 rounded cursor-pointer {"bg-emerald-500/10 border-l-2 border-emerald-500" if is_active else ""}') as r:
-                    ui.label(f"{i+1}. {name}").classes(f'text-[10px] uppercase {"text-emerald-400 font-bold" if is_active else "text-slate-600"}')
+                active = (i == step_idx)
+                with ui.row().classes(f'w-full p-2 rounded cursor-pointer {"bg-emerald-500/10 border-l-2 border-emerald-500" if active else ""}') as r:
+                    ui.label(f"{i+1}. {name}").classes(f'text-[10px] uppercase {"text-emerald-400 font-bold" if active else "text-slate-600"}')
                     r.on('click', lambda i=i: (app.storage.user.update({'current_step': i}), ui.navigate.to(f'/workspace/{d_id}')))
 
-        # Chat Area
         with ui.column().classes('flex-grow p-12 overflow-y-auto pb-40'):
             ui.label(expert.steps[step_idx]).classes('text-4xl font-black text-white mb-8')
-            
-            # Affichage réponse IA
-            with ui.card().classes('w-full bg-slate-900 border border-slate-800 p-6 rounded-xl'):
-                ia_output = ui.markdown('Bonjour, je suis Kareem. Comment puis-je vous aider sur ce point ?').classes('text-slate-300 text-lg')
+            with ui.card().classes('w-full bg-slate-900 border border-slate-800 p-6 rounded-xl mb-10'):
+                ia_out = ui.markdown('Bonjour, je suis Kareem. Posez-moi vos questions pour cette étape.').classes('text-slate-300 text-lg')
 
-            # Input flottant
-            with ui.footer().classes('bg-transparent p-6'):
-                with ui.card().classes('max-w-4xl mx-auto w-full bg-slate-900 border border-slate-700 p-4 shadow-2xl'):
-                    with ui.row().classes('w-full items-center gap-4'):
-                        if step_idx in [3, 9]:
-                            ui.upload(label="DOC").props('flat color=emerald').classes('w-24')
-                        
-                        user_msg = ui.input(placeholder='Votre message...').props('dark borderless').classes('flex-grow text-white')
-                        
-                        async def talk():
-                            if not user_msg.value: return
-                            txt = user_msg.value
-                            user_msg.value = ""
-                            if client:
-                                prompt_sys = expert.get_system_prompt(step_idx)
-                                res = await asyncio.to_thread(client.chat.completions.create,
-                                    model="llama-3.3-70b-versatile",
-                                    messages=[{"role": "system", "content": prompt_sys}, {"role": "user", "content": txt}]
-                                )
-                                await typewriter_effect(ia_output, res.choices[0].message.content)
-                        
-                        ui.button(icon='send', on_click=talk).props('round color=emerald')
+    # FOOTER (CORRIGÉ : Enfant direct de la page)
+    with ui.footer().classes('bg-slate-950 p-6 border-t border-slate-900'):
+        with ui.card().classes('max-w-4xl mx-auto w-full bg-slate-900 border border-emerald-500/20 p-4 shadow-2xl'):
+            with ui.row().classes('w-full items-center gap-4'):
+                if step_idx in [3, 9]:
+                    ui.upload(label="DOC").props('flat color=emerald').classes('w-24')
+                
+                user_msg = ui.input(placeholder='Parlez à Kareem...').props('dark borderless').classes('flex-grow text-white')
+                
+                async def talk():
+                    if not user_msg.value: return
+                    txt = user_msg.value
+                    user_msg.value = ""
+                    if client:
+                        prompt_sys = expert.get_system_prompt(step_idx)
+                        res = await asyncio.to_thread(client.chat.completions.create,
+                            model="llama-3.3-70b-versatile",
+                            messages=[{"role": "system", "content": prompt_sys}, {"role": "user", "content": txt}]
+                        )
+                        await typewriter_effect(ia_out, res.choices[0].message.content)
+                
+                ui.button(icon='send', on_click=talk).props('round color=emerald')
 
-# --- 5. RUN ---
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(port=8080, storage_secret='LEGAL_OS_SECURE_2026', dark=True, reload=False)
+    ui.run(port=8080, storage_secret='LEGAL_OS_2026', dark=True, reload=False)
