@@ -1,170 +1,128 @@
-import os, sqlite3, asyncio, bcrypt
+import os, sqlite3, asyncio, bcrypt, stripe, io
 from datetime import datetime
 from dotenv import load_dotenv
 from groq import Groq
 from nicegui import ui, app
+from PyPDF2 import PdfReader
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
 
-# --- CONFIG ---
+# --- CONFIGURATION ---
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-DB = "legalos_v3.db"
+stripe.api_key = os.getenv("STRIPE_KEY")
+DB = "legalos_v4.db"
 
-# --- DB INITIALIZATION ---
 def init_db():
     with sqlite3.connect(DB) as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, email TEXT, password TEXT)")
-        conn.execute("CREATE TABLE IF NOT EXISTS dossiers(id INTEGER PRIMARY KEY, user_id INTEGER, nom TEXT, archive INTEGER DEFAULT 0, date TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS dossiers(id INTEGER PRIMARY KEY, user_id INTEGER, nom TEXT, date TEXT)")
         conn.execute("CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, dossier_id INTEGER, role TEXT, content TEXT)")
+        conn.execute("CREATE TABLE IF NOT EXISTS docs(id INTEGER PRIMARY KEY, dossier_id INTEGER, path TEXT, content TEXT)")
 init_db()
 
-STEPS = ["Qualification","Objectif","Base légale","Inventaire","Risques","Amiable","Attaque","Rédaction","Audience","Jugement","Recours"]
+STEPS = ["Qualification", "Stratégie", "Base légale", "Inventaire", "Risques", "Amiable", "Action", "Rédaction", "Audience"]
 
-# --- LOGIQUE IA KAREEM ---
-async def call_kareem(msg, step, history):
-    system = f"Tu es Kareem. Style: précis, stratégique, froid. Méthode Freeman. Étape: {step}. Pose des questions chirurgicales."
+# --- LOGIQUE IA (KAREEM) ---
+async def call_kareem(msg, step, history, context_docs=""):
+    system = f"""Tu es Kareem, une IA juridique d'élite. 
+    TON STYLE : Précis, tranchant, sans fioritures. Tu parles comme un expert du droit français.
+    CONTEXTE ÉTAPE : {step}.
+    DOCUMENTS ANALYSÉS : {context_docs}
+    CONSIGNE : Analyse la demande, réponds avec autorité et pose une question stratégique pour avancer."""
+    
     messages = [{"role": "system", "content": system}]
-    for h in history[-6:]:
+    for h in history[-8:]:
         messages.append({"role": h[0], "content": h[1]})
     messages.append({"role": "user", "content": msg})
 
-    response = await asyncio.to_thread(client.chat.completions.create, model="llama-3.3-70b-versatile", messages=messages, temperature=0.3)
-    return response.choices[0].message.content
+    res = await asyncio.to_thread(client.chat.completions.create, model="llama-3.3-70b-versatile", messages=messages)
+    return res.choices[0].message.content
 
-# --- AUTH UTILS ---
-def hash_pwd(p): return bcrypt.hashpw(p.encode(), bcrypt.gensalt())
-def check_pwd(p,h): return bcrypt.checkpw(p.encode(), h)
+# --- UTILITAIRES ---
+def get_pdf_text(file_content):
+    try:
+        reader = PdfReader(io.BytesIO(file_content))
+        return "\n".join([p.extract_text() for p in reader.pages])[:8000]
+    except: return ""
 
-# --- UI PAGES ---
+def generate_pdf_report(d_id):
+    filename = f"Rapport_Kareem_{d_id}.pdf"
+    doc = SimpleDocTemplate(filename, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = [Paragraph(f"DOSSIER JURIDIQUE #{d_id}", styles['Title']), Spacer(1, 20)]
+    with sqlite3.connect(DB) as conn:
+        msgs = conn.execute("SELECT role, content FROM messages WHERE dossier_id=?", (d_id,)).fetchall()
+    for role, content in msgs:
+        label = "VOUS" if role == "user" else "KAREEM"
+        elements.append(Paragraph(f"<b>{label}:</b> {content}", styles['Normal']))
+        elements.append(Spacer(1, 10))
+    doc.build(elements)
+    return filename
+
+# --- INTERFACE ---
 
 @ui.page('/')
-def login():
-    ui.query('body').style('background-color: #020617; color: white;')
-    with ui.card().classes('absolute-center p-10 bg-slate-900 border border-emerald-500/20 shadow-2xl rounded-2xl w-96'):
-        ui.label('LEGAL OS').classes('text-4xl font-black text-emerald-500 text-center mb-6')
+def login_page():
+    ui.query('body').style("background-color: #0b0e14; font-family: 'Inter', sans-serif;")
+    with ui.card().classes('absolute-center p-12 bg-[#141820] border border-white/5 shadow-2xl w-full max-w-md rounded-2xl'):
+        ui.label('LEGAL OS').classes('text-3xl font-black text-emerald-500 mb-2 text-center tracking-tighter')
+        ui.label('Intelligence Juridique Freeman').classes('text-slate-500 text-sm mb-8 text-center')
+        
         email = ui.input("Email").props('dark outlined color=emerald').classes('w-full mb-4')
         pwd = ui.input("Mot de passe", password=True).props('dark outlined color=emerald').classes('w-full mb-6')
 
-        def connect():
+        async def auth():
             with sqlite3.connect(DB) as conn:
                 u = conn.execute("SELECT id, password FROM users WHERE email=?", (email.value,)).fetchone()
-            if u and check_pwd(pwd.value, u[1]):
-                app.storage.user.update({"id": u[0], "email": email.value})
-                ui.navigate.to('/dashboard')
-            else: ui.notify('Identifiants invalides', color='red')
+            if u and bcrypt.checkpw(pwd.value.encode(), u[1]):
+                app.storage.user.update({"id": u[0]})
+                ui.navigate.to("/dashboard")
+            else: ui.notify("Identifiants incorrects", color='red')
 
-        def register():
-            try:
-                with sqlite3.connect(DB) as conn:
-                    conn.execute("INSERT INTO users VALUES(NULL,?,?)", (email.value, hash_pwd(pwd.value)))
-                ui.notify('Compte créé, connectez-vous')
-            except: ui.notify('Erreur lors de la création')
-
-        ui.button("CONNEXION", on_click=connect).classes('w-full bg-emerald-600 font-bold mb-2')
-        ui.button("CRÉER COMPTE", on_click=register).props('flat color=slate-400').classes('w-full text-xs')
+        ui.button("ACCÉDER À L'INTERFACE", on_click=auth).classes('w-full py-4 bg-emerald-600 font-bold rounded-xl')
 
 @ui.page('/dashboard')
 def dashboard():
-    if not app.storage.user.get("id"): return ui.navigate.to('/')
-    ui.query('body').style('background-color: #020617;')
     uid = app.storage.user.get("id")
+    if not uid: return ui.navigate.to('/')
+    ui.query('body').style("background-color: #0b0e14; color: white;")
 
     with ui.column().classes('w-full max-w-4xl mx-auto p-8'):
-        ui.label(f"DOSSIERS : {app.storage.user.get('email')}").classes('text-2xl font-black text-emerald-500 mb-8')
+        ui.label('Tableau de bord').classes('text-4xl font-black mb-12 tracking-tight')
         
-        with ui.row().classes('w-full gap-4 mb-12 items-center bg-slate-900 p-4 rounded-xl border border-slate-800'):
-            nom = ui.input(placeholder="Nom du nouveau dossier...").props('dark borderless').classes('flex-grow px-4')
-            ui.button('CRÉER', on_click=lambda: create_dossier(uid, nom.value)).classes('bg-emerald-600 px-8')
+        with ui.row().classes('w-full gap-4 mb-12'):
+            nom = ui.input(placeholder="Nom du nouveau litige...").props('dark outlined color=emerald').classes('flex-grow')
+            ui.button('CRÉER DOSSIER', on_click=lambda: create_d(uid, nom.value)).classes('bg-emerald-600 px-8 rounded-lg')
 
         with sqlite3.connect(DB) as conn:
-            dossiers = conn.execute("SELECT id, nom, date FROM dossiers WHERE user_id=? AND archive=0", (uid,)).fetchall()
+            dossiers = conn.execute("SELECT id, nom, date FROM dossiers WHERE user_id=? ORDER BY id DESC", (uid,)).fetchall()
         
         for d in dossiers:
-            with ui.card().classes('w-full bg-slate-900 border border-slate-800 mb-2 hover:border-emerald-500/30 transition-all'):
-                with ui.row().classes('w-full items-center p-2'):
-                    ui.label(d[1]).classes('text-lg font-bold flex-grow cursor-pointer').on('click', lambda d=d: ui.navigate.to(f"/d/{d[0]}"))
-                    ui.button(icon='archive', on_click=lambda d=d: archive_dossier(d[0])).props('flat color=slate-500')
-                    ui.button(icon='delete', on_click=lambda d=d: delete_dossier(d[0])).props('flat color=red-800')
+            with ui.card().classes('w-full bg-[#141820] border border-white/5 p-6 mb-4 hover:border-emerald-500/50 transition-all cursor-pointer rounded-xl'):
+                with ui.row().classes('w-full items-center justify-between'):
+                    with ui.column():
+                        ui.label(d[1]).classes('text-xl font-bold text-slate-100')
+                        ui.label(f"Créé le {d[2][:10]}").classes('text-xs text-slate-500')
+                    ui.button('OUVRIR', on_click=lambda d=d: ui.navigate.to(f"/d/{d[0]}")).props('flat color=emerald')
 
-def create_dossier(uid, nom):
+def create_d(uid, nom):
     if not nom: return
     with sqlite3.connect(DB) as conn:
-        conn.execute("INSERT INTO dossiers (user_id, nom, archive, date) VALUES(?,?,0,?)", (uid, nom, datetime.now().strftime("%d/%m/%Y")))
-    ui.navigate.to('/dashboard')
-
-def archive_dossier(id):
-    with sqlite3.connect(DB) as conn: conn.execute("UPDATE dossiers SET archive=1 WHERE id=?", (id,))
-    ui.navigate.to('/dashboard')
-
-def delete_dossier(id):
-    with sqlite3.connect(DB) as conn: conn.execute("DELETE FROM dossiers WHERE id=?", (id,)); conn.execute("DELETE FROM messages WHERE dossier_id=?", (id,))
+        conn.execute("INSERT INTO dossiers VALUES(NULL,?,?,?)", (uid, nom, str(datetime.now())))
     ui.navigate.to('/dashboard')
 
 @ui.page('/d/{d_id}')
-async def dossier_page(d_id: int):
-    if not app.storage.user.get("id"): return ui.navigate.to('/')
-    ui.query('body').style('background-color: #020617;')
+async def dossier_view(d_id: int):
+    uid = app.storage.user.get("id")
+    if not uid: return ui.navigate.to('/')
     
-    current_step_idx = app.storage.user.get(f"s_{d_id}", 0)
+    current_s = app.storage.user.get(f"s_{d_id}", 0)
+    ui.query('body').style("background-color: #0b0e14; color: white;")
 
-    # HEADER & NAV
-    with ui.header().classes('bg-slate-950 border-b border-emerald-500/10 p-4 justify-between items-center'):
-        ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/dashboard')).props('flat color=emerald')
-        ui.label(f'ETAPE : {STEPS[current_step_idx]}').classes('font-black text-emerald-500 uppercase tracking-widest')
-        ui.button(icon='menu', on_click=lambda: drawer.toggle()).props('flat color=emerald')
-
-    with ui.left_drawer().classes('bg-slate-950 border-r border-slate-900') as drawer:
-        ui.label('NAVIGATION').classes('p-4 text-xs font-bold text-slate-500')
+    # Navigation latérale
+    with ui.left_drawer().classes('bg-[#0b0e14] border-r border-white/5 p-4'):
+        ui.label('MÉTHODE FREEMAN').classes('text-[10px] font-black text-emerald-500 mb-6 px-4 tracking-widest')
         for i, s in enumerate(STEPS):
-            active = (i == current_step_idx)
-            with ui.row().classes(f'w-full p-4 cursor-pointer {"bg-emerald-500/10" if active else ""}') as r:
-                ui.label(s).classes(f'text-xs font-bold {"text-emerald-400" if active else "text-slate-500"}')
-                r.on('click', lambda i=i: set_step(d_id, i))
-
-    # CHAT AREA
-    chat_box = ui.column().classes('w-full max-w-3xl mx-auto p-6 pb-40 gap-4')
-    
-    with sqlite3.connect(DB) as conn:
-        hist = conn.execute("SELECT role, content FROM messages WHERE dossier_id=?", (d_id,)).fetchall()
-    
-    for h in hist:
-        is_user = h[0] == "user"
-        with ui.column().classes(f'w-full {"items-end" if is_user else "items-start"}'):
-            ui.label(h[1]).classes(f'p-4 rounded-xl max-w-[80%] {"bg-emerald-700 text-white" if is_user else "bg-slate-800 text-slate-200"}')
-
-    # FOOTER INPUT
-    with ui.footer().classes('bg-transparent p-6'):
-        with ui.card().classes('w-full max-w-3xl mx-auto bg-slate-900 border border-slate-700 p-4 shadow-2xl rounded-2xl'):
-            with ui.row().classes('w-full items-center no-wrap'):
-                ui.upload(label="DOCS").props('flat color=emerald').classes('w-20')
-                msg_input = ui.input(placeholder="Parlez à Kareem...").props('dark borderless').classes('flex-grow px-4 text-white')
-                
-                async def send():
-                    txt = msg_input.value
-                    if not txt: return
-                    msg_input.value = ""
-                    
-                    with chat_box:
-                        ui.label(txt).classes('self-end p-4 rounded-xl bg-emerald-700 text-white mb-4')
-                        # Kareem typing effect
-                        response_label = ui.label("").classes('self-start p-4 rounded-xl bg-slate-800 text-slate-200 mb-4')
-                    
-                    with sqlite3.connect(DB) as conn:
-                        conn.execute("INSERT INTO messages (dossier_id, role, content) VALUES(?,?,?)", (d_id, "user", txt))
-                    
-                    reply = await call_kareem(txt, STEPS[current_step_idx], hist)
-                    
-                    for char in reply:
-                        response_label.text += char
-                        await asyncio.sleep(0.005)
-                    
-                    with sqlite3.connect(DB) as conn:
-                        conn.execute("INSERT INTO messages (dossier_id, role, content) VALUES(?,?,?)", (d_id, "assistant", reply))
-
-                ui.button(icon='send', on_click=send).props('round color=emerald')
-
-def set_step(d_id, i):
-    app.storage.user.update({f"s_{d_id}": i})
-    ui.navigate.to(f"/d/{d_id}")
-
-# --- RUN ---
-ui.run(storage_secret='SECRET_KEY_2026', dark=True)
+            is_active = (i == current_
