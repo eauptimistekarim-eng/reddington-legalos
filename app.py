@@ -6,19 +6,28 @@ from dotenv import load_dotenv
 from groq import Groq
 from nicegui import ui, app
 
-# --- CHARGEMENT SÉCURISÉ ---
-# On charge les variables du fichier .env local
-load_dotenv()
+# --- 1. CHARGEMENT SÉCURISÉ (FORCE LE DOSSIER LOCAL) ---
+basedir = os.path.abspath(os.path.dirname(__file__))
+env_path = os.path.join(basedir, '.env')
+
+if os.path.exists(env_path):
+    load_dotenv(env_path, override=True)
+    print(f"✅ Fichier .env détecté à : {env_path}")
+else:
+    print(f"❌ ERREUR : Le fichier .env est introuvable à : {env_path}")
+
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 
 if not GROQ_KEY:
-    print("❌ ERREUR : La clé GROQ_API_KEY est introuvable dans le fichier .env")
+    print("❌ LA CLÉ GROQ_API_KEY EST VIDE. Vérifie le contenu de ton .env")
+    # On crée un client vide pour éviter le crash immédiat, 
+    # mais l'IA ne répondra pas tant que la clé n'est pas là.
+    client = None
 else:
-    print(f"✅ KAREEM CONNECTÉ (Mode Sécurisé : {GROQ_KEY[:10]}...)")
+    print(f"🚀 KAREEM OPÉRAȚIONNEL (Clé : {GROQ_KEY[:10]}...)")
+    client = Groq(api_key=GROQ_KEY)
 
-client = Groq(api_key=GROQ_KEY)
-
-# --- BASE DE DONNÉES ---
+# --- 2. BASE DE DONNÉES ---
 def init_db():
     conn = sqlite3.connect('legalos_prod.db', check_same_thread=False)
     c = conn.cursor()
@@ -30,7 +39,7 @@ def init_db():
 
 init_db()
 
-# --- MOTEUR KAREEM (MÉTHODE FREEMAN) ---
+# --- 3. MOTEUR KAREEM (MÉTHODE FREEMAN) ---
 class KareemEngine:
     def __init__(self):
         self.titles = [
@@ -40,6 +49,10 @@ class KareemEngine:
         ]
 
     async def generate_full_strategy(self, user_input):
+        if not client:
+            ui.notify("Erreur : Clé API manquante. Vérifiez votre fichier .env", color='red')
+            return None
+            
         prompt = f"""
         Tu es Kareem, IA experte en droit français (Méthode Freeman). 
         Analyse les faits suivants : {user_input}
@@ -61,7 +74,7 @@ class KareemEngine:
 
 engine = KareemEngine()
 
-# --- INTERFACE ---
+# --- 4. INTERFACE ---
 @ui.page('/login')
 def login_page():
     with ui.card().classes('absolute-center p-12 w-96 bg-slate-950 border border-emerald-500/30 shadow-2xl rounded-2xl'):
@@ -97,7 +110,7 @@ def main():
                     ui.label(t).classes(f'text-[10px] uppercase { "text-emerald-400 font-bold" if is_active else "text-slate-500" }')
                     r.on('click', lambda i=i: (app.storage.user.update({'step_idx': i}), ui.navigate.to('/')))
 
-        # Main
+        # Main Area
         with ui.column().classes('flex-grow p-12 overflow-y-auto'):
             ui.label(engine.titles[current_idx]).classes('text-4xl font-black mb-8')
             
@@ -106,7 +119,7 @@ def main():
             res = c.fetchone(); conn.close()
             s_faits, s_analyse = res if res else ("", "")
 
-            with ui.card().classes('bg-slate-900 border border-slate-800 p-8 w-full rounded-2xl'):
+            with ui.card().classes('bg-slate-900 border border-slate-800 p-8 w-full rounded-2xl shadow-xl'):
                 input_area = ui.textarea(value=s_faits, placeholder='Détails de l\'affaire...').classes('w-full text-lg').props('dark borderless autogrow')
                 
                 async def run_analysis():
@@ -118,19 +131,22 @@ def main():
                         conn = sqlite3.connect('legalos_prod.db'); c = conn.cursor()
                         for s in data['steps']:
                             c.execute("INSERT OR REPLACE INTO steps VALUES (?,?,?,?)", 
-                                      (user_email, s['idx'], input_area.value if s['idx']==0 else "Freeman", s['content']))
+                                      (user_email, s['idx'], input_area.value if s['idx']==0 else "Analyse Freeman", s['content']))
                         conn.commit(); conn.close()
                         ui.navigate.to('/')
                     
                     spinner.set_visibility(False); btn_gen.set_visibility(True)
 
                 if current_idx == 0:
-                    btn_gen = ui.button('LANCER L\'ANALYSE', on_click=run_analysis).classes('w-full mt-4 bg-emerald-600 py-3 rounded-xl')
-                    spinner = ui.spinner(color='emerald').classes('mx-auto mt-4'); spinner.set_visibility(False)
+                    btn_gen = ui.button('LANCER L\'ANALYSE FREEMAN', on_click=run_analysis).classes('w-full mt-4 bg-emerald-600 py-3 rounded-xl')
+                    spinner = ui.spinner(color='emerald', size='lg').classes('mx-auto mt-4'); spinner.set_visibility(False)
 
             if s_analyse:
-                with ui.card().classes('w-full mt-6 bg-slate-900/50 p-8 border border-slate-800 rounded-2xl'):
-                    ui.markdown(s_analyse).classes('text-slate-300')
+                with ui.card().classes('w-full mt-6 bg-slate-900/50 p-8 border border-slate-800 rounded-2xl shadow-inner'):
+                    ui.label('ANALYSE KAREEM').classes('text-[10px] text-emerald-500 font-bold mb-4 tracking-widest')
+                    ui.markdown(s_analyse).classes('text-slate-300 leading-relaxed')
 
+# --- 5. LANCEMENT ---
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(port=8080, storage_secret='SECRET_KEY_2026', dark=True, reload=False)
+    port = int(os.environ.get('PORT', 8080))
+    ui.run(port=port, storage_secret='SECRET_KEY_2026', dark=True, reload=False, title="LegalOS")
